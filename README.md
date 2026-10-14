@@ -13,7 +13,7 @@ Nixync lets you manage a fleet of machines from one interface by utilizing NixOS
 
 ## Who is it for?
 
-- Teams managing multiple workstations or servers.
+- Organizations and teams managing multiple workstations or servers.
 - Schools and computer labs.
 - Homelab users running several NixOS machines.
 
