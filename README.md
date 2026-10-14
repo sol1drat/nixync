@@ -1,8 +1,6 @@
 # Nixync
 
-**A control center for managing multiple machines.**
-
-Nixync lets you manage a fleet of NixOS machines from one interface. Configure devices, deploy changes, monitor results, and recover from failed deployments without managing every machine separately.
+Nixync lets you manage a fleet of machines from one interface by utilizing NixOS. Configure devices, deploy changes, monitor results, and recover from failed deployments without managing every machine separately.
 
 ## Features
 
