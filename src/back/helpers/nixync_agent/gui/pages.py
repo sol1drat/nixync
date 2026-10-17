@@ -147,11 +147,13 @@ class AppsPage(QWidget):
             self._show_message("Nothing found.")
             return
         clear_layout(self.results)
+        style.restyle_if_stale(self)
         for package in packages:
             self.results.addWidget(self._card(package))
 
     def _show_message(self, text: str):
         clear_layout(self.results)
+        style.restyle_if_stale(self)
         label = QLabel(text)
         label.setObjectName("Muted")
         self.results.addWidget(label)
@@ -207,6 +209,8 @@ class MyRequestsPage(QWidget):
 
     def show_requests(self, requests: list) -> None:
         clear_layout(self.rows)
+        # Rebuilt content is new widgets, which carry no sheet of their own.
+        style.restyle_if_stale(self)
         if not requests:
             empty = QLabel("You haven't asked for anything yet.")
             empty.setObjectName("Muted")
@@ -247,6 +251,7 @@ class MachinePage(QWidget):
 
     def show_machine(self, machine, agent_id: str, error: str = "") -> None:
         clear_layout(self.body)
+        style.restyle_if_stale(self)
         if machine is None:
             # Whoever is sitting at this machine is not an administrator. Lead with a
             # plain sentence and keep the transport error underneath for whoever is.

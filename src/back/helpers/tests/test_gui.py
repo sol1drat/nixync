@@ -160,3 +160,78 @@ def test_an_unreachable_server_explains_itself_in_plain_words(qt_app):
     assert "Can't reach the Nixync server." in shown
     assert "machine still works normally" in shown
     assert "HTTPConnectionPool" in shown, "the technical detail is kept, just demoted"
+
+
+# -- dark mode --------------------------------------------------------------
+
+
+def sheet_themes(window) -> set:
+    """Which theme each styled part is currently carrying."""
+    parts = [window.stack.widget(i) for i in range(window.stack.count())]
+    parts += [window.sidebar.parentWidget(), window.statusBar()]
+    return {p.property("sheet_theme") for p in parts if p.property("sheet_theme")}
+
+
+def test_switching_to_dark_restyles_the_visible_page(qt_app, live_server, admin):
+    """The window chrome used to switch while the content stayed light."""
+    from nixync_ui import style
+
+    machine = admin.register_machine("dark-visible")
+    window = AgentWindow(live_server, machine.id, username="student")
+    style.apply(QApplication.instance(), "light")
+
+    window._toggle_theme()
+
+    assert style.IS_DARK
+    assert window.stack.currentWidget().property("sheet_theme") == "dark"
+    style.apply(QApplication.instance(), "light")
+
+
+def test_a_page_shown_after_a_theme_switch_is_restyled(qt_app, live_server, admin):
+    """Hidden pages are styled lazily, so they must be caught when shown."""
+    from nixync_ui import style
+
+    machine = admin.register_machine("dark-hidden")
+    window = AgentWindow(live_server, machine.id, username="student")
+    style.apply(QApplication.instance(), "light")
+    window.stack.setCurrentIndex(0)
+
+    window._toggle_theme()
+    window.stack.setCurrentIndex(2)
+    QApplication.processEvents()
+
+    assert window.stack.widget(2).property("sheet_theme") == "dark", (
+        "the page picked up the new theme when it was shown"
+    )
+    style.apply(QApplication.instance(), "light")
+
+
+def test_content_rebuilt_after_a_refresh_carries_the_current_theme(
+    qt_app, live_server, admin
+):
+    """Pages rebuild their contents on refresh; the new widgets need the sheet."""
+    from nixync_ui import style
+
+    machine = admin.register_machine("dark-rebuilt")
+    window = AgentWindow(live_server, machine.id, username="student")
+    window._toggle_theme()
+
+    window.machine.show_machine(None, machine.id, error="offline")
+
+    assert window.machine.property("sheet_theme") == style.THEME
+    style.apply(QApplication.instance(), "light")
+
+
+def test_the_chosen_theme_is_remembered(qt_app, live_server, admin):
+    """Otherwise the app snaps back to light on every launch."""
+    from PySide6.QtCore import QSettings
+    from nixync_ui import style
+
+    machine = admin.register_machine("dark-remembered")
+    window = AgentWindow(live_server, machine.id, username="student")
+    style.apply(QApplication.instance(), "light")
+
+    window._toggle_theme()
+
+    assert QSettings("Nixync", "NixyncAgent").value("theme", type=str) == "dark"
+    style.apply(QApplication.instance(), "light")

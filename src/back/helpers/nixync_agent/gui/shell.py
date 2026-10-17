@@ -67,6 +67,13 @@ class AgentShell(QMainWindow):
             style.styled(part)
         for index in range(self.stack.count()):
             style.styled(self.stack.widget(index), lazy=True)
+        # Hidden pages are styled lazily, so a theme switch leaves them carrying the
+        # old sheet until they are shown again. Without this the device app came up
+        # in dark mode with light-mode pages — the window chrome switched, the
+        # content did not.
+        self.stack.currentChanged.connect(
+            lambda _index: style.restyle_if_stale(self.stack.currentWidget())
+        )
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
@@ -134,6 +141,11 @@ class AgentShell(QMainWindow):
         return column
 
     def _toggle_theme(self) -> None:
+        from PySide6.QtCore import QSettings
         from PySide6.QtWidgets import QApplication
 
-        style.apply(QApplication.instance(), "light" if style.IS_DARK else "dark")
+        theme = "light" if style.IS_DARK else "dark"
+        # Remembered, so the app does not snap back to light on the next launch.
+        QSettings("Nixync", "NixyncAgent").setValue("theme", theme)
+        style.apply(QApplication.instance(), theme)
+        style.restyle_if_stale(self.stack.currentWidget())
