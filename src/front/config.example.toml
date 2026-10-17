@@ -1,0 +1,6 @@
+# Copy to config.toml (next to this file) or point NIXYNC_CONFIG at another path.
+# NIXYNC_SERVER_URL overrides server_url.
+
+server_url = "http://127.0.0.1:8000"
+request_timeout = 3.0
+poll_interval_seconds = 10
