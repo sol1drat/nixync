@@ -47,14 +47,21 @@ class SystemWriter:
     def __init__(
         self,
         config_dir: Path = Path("/etc/nixos"),
-        run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        run: Callable[..., subprocess.CompletedProcess] | None = None,
         dry_run: bool = False,
         rebuild_command: list[str] | None = None,
     ):
         self.config_dir = Path(config_dir)
-        self.run = run
+        # Resolved at call time, not captured here. A default of `subprocess.run`
+        # would bind at import, so a test that patches subprocess.run would silently
+        # keep the real one and invoke an actual nixos-rebuild.
+        self._run = run
         self.dry_run = dry_run
         self.rebuild_command = rebuild_command or REBUILD_COMMAND
+
+    @property
+    def run(self) -> Callable[..., subprocess.CompletedProcess]:
+        return self._run if self._run is not None else subprocess.run
 
     @property
     def module_path(self) -> Path:

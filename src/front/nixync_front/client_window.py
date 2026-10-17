@@ -19,7 +19,7 @@ from nixync_front.api import ApiError, NixyncClient
 from nixync_front.app_picker import _Search
 from nixync_front.config import Config
 from nixync_front.main_window import MainWindow
-from nixync_front.nixos_search import Package
+from nixos_search import Package
 from nixync_front.sample_data import APP_CATALOG, RequestStatus
 from nixync_front.settings_panel import SettingsPanel
 from nixync_front.users_panel import UsersPanel

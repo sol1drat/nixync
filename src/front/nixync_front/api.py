@@ -20,7 +20,9 @@ from nixync_client import Machine as ServerMachine
 from nixync_client import Preset as ServerPreset
 from nixync_client import SystemSettings as ServerSettings
 
-from nixync_front import nixos_search, sample_data
+import nixos_search
+
+from nixync_front import sample_data
 from nixync_front.config import Config
 
 

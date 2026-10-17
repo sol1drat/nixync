@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 
 from nixync_ui import style
 from nixync_front.api import NixyncClient
-from nixync_front.nixos_search import Package, SearchError
+from nixos_search import Package, SearchError
 from nixync_ui.widgets import FlowLayout, close_icon, safe_emit, search_icon, themed_icon
 
 WIDTH = 560
