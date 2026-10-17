@@ -8,8 +8,9 @@ from PySide6.QtWidgets import (
 
 from nixync_front import style
 from nixync_front.api import NixyncClient
-from nixync_front.sample_data import Build, Health, Machine, MachineError
-from nixync_front.widgets import SegmentButton, ago, centered, gear_icon, page_header, status_text
+from nixync_front.dialogs.ask_ai import AskAIDialog
+from nixync_front.sample_data import Build, Health, Machine, MachineError, Preset
+from nixync_front.widgets import SegmentButton, ago, centered, gear_icon, page_header, status_text, themed_icon
 
 ROW_HEIGHT = 50
 RECENT_LIMIT = 15
@@ -69,8 +70,9 @@ def host_cell(name: str) -> QLabel:
 
 
 class LogDialog(QDialog):
-    def __init__(self, machine: str, error: MachineError, parent=None):
+    def __init__(self, device: Machine, error: MachineError, preset: Preset | None, parent=None):
         super().__init__(parent)
+        machine = device.name
         self.setWindowTitle(f"{machine}: technical details")
         self.setMinimumSize(640, 300)
         layout = QVBoxLayout(self)
@@ -86,6 +88,9 @@ class LogDialog(QDialog):
         log.setReadOnly(True)
         layout.addWidget(log, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        ask = buttons.addButton("Ask AI", QDialogButtonBox.ButtonRole.ActionRole)
+        ask.setToolTip("Get an explanation and a suggested fix from Claude")
+        ask.clicked.connect(lambda: AskAIDialog(device, error, preset, self).exec())
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
@@ -233,7 +238,7 @@ class UpdatesPage(QWidget):
             layout.addWidget(retry)
         settings = QToolButton()
         settings.setObjectName("SettingsButton")
-        settings.setIcon(gear_icon(style.MUTED))
+        themed_icon(settings, gear_icon)
         settings.setIconSize(QSize(18, 18))
         settings.setToolTip(f"Settings for {m.name}")
         settings.clicked.connect(lambda: self.configure_requested.emit(m.name))
@@ -267,7 +272,7 @@ class UpdatesPage(QWidget):
             t.setCellWidget(row, 2, centered(status_text(style.PROBLEM, e.title)))
             details = QPushButton("Details")
             details.setProperty("link", True)
-            details.clicked.connect(lambda _=False, m=m, e=e: LogDialog(m.name, e, self).exec())
+            details.clicked.connect(lambda _=False, m=m, e=e: LogDialog(m, e, self.client.get_preset(m.preset), self).exec())
             t.setCellWidget(row, 3, centered(details, Qt.AlignmentFlag.AlignRight))
         if not errors:
             empty_row(t, "No errors.")

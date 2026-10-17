@@ -4,6 +4,8 @@ Only GET /status exists on the server today. The other methods are the
 calls the UI expects; they return sample data until the server grows them.
 """
 
+from datetime import datetime
+
 import requests
 
 from nixync_front import nixos_search, sample_data
@@ -28,6 +30,13 @@ class NixyncClient:
             return response.json()
         except requests.RequestException as e:
             raise ApiError(str(e)) from e
+
+    # TODO: replace with POST /login once the server has authentication; it should
+    # check the credentials and return a session token for later requests.
+    def login(self, username: str, password: str) -> dict:
+        if not username or not password:
+            raise ApiError("Enter your username and password.")
+        return {"username": username}
 
     def get_status(self) -> dict:
         return self._get("/status")
@@ -88,6 +97,27 @@ class NixyncClient:
         request = self._request(request_id)
         request.status = sample_data.RequestStatus.DECLINED
         return request
+
+    # TODO: replace with POST /requests once the server has it (sent from the device's client app).
+    def create_request(self, machine: str, app: str, requested_by: str, reason: str) -> sample_data.AppRequest:
+        request = sample_data.AppRequest(
+            id=max((r.id for r in sample_data.REQUESTS), default=0) + 1,
+            machine=machine, app=app, requested_by=requested_by,
+            when=datetime.now(), reason=reason,
+        )
+        sample_data.REQUESTS.append(request)
+        return request
+
+    def installed_apps(self, machine: str) -> set[str]:
+        """Apps the device already has: its preset's apps plus its own."""
+        m = self.get_machine(machine)
+        preset = self.get_preset(m.preset)
+        return set(m.extra_apps) | set(preset.extra_apps if preset else [])
+
+    # TODO: send to the server, which rebuilds the device. For new users it should set the
+    # password on the device itself (hashed there); passwords never go into the Nix config.
+    def save_settings(self, machine: str, settings: sample_data.SystemSettings, passwords: dict[str, str] | None = None):
+        self.get_machine(machine).settings = settings
 
     def _request(self, request_id: int) -> sample_data.AppRequest:
         return next(r for r in sample_data.REQUESTS if r.id == request_id)

@@ -27,7 +27,8 @@ class PresetsPage(QWidget):
         left.setFixedWidth(240)
         left.setObjectName("PresetColumn")
         left.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        left.setStyleSheet(f"#PresetColumn {{ border-right: 1px solid {style.color('border')}; }}")
+        style.themed(left, lambda: left.setStyleSheet(
+            f"#PresetColumn {{ border-right: 1px solid {style.color('border')}; }}"))
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(12, 24, 12, 24)
         hint = QLabel("A preset is a setup shared by a group of devices.")

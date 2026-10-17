@@ -6,10 +6,14 @@ from PySide6.QtWidgets import (
 
 from nixync_front import style
 from nixync_front.api import NixyncClient
-from nixync_front.app_picker import AppPicker
+from nixync_front.app_picker import AppPicker, static_tags
+from nixync_front.dialogs.ask_ai import AskAIDialog
+from nixync_front.settings_panel import SettingsPanel
+from nixync_front.users_panel import UsersPanel
+from nixync_front.pages.machines import gb
 from nixync_front.sample_data import Health, Machine
 from nixync_front.widgets import (
-    Panel, ago, clear_layout, dot, page_header, primary_button, status_row, status_text, timestamp,
+    Panel, RingGauge, ago, clear_layout, dot, page_header, primary_button, status_row, status_text, timestamp,
 )
 
 def health_color(health: Health) -> str:
@@ -42,6 +46,7 @@ class MachineConfigPage(QWidget):
     """Settings for one machine: status, build history, errors and its apps."""
 
     back_requested = Signal()
+    message = Signal(str)
     requests_requested = Signal(str)
     undo_requested = Signal(str)
     apply_requested = Signal(str, list)
@@ -88,6 +93,12 @@ class MachineConfigPage(QWidget):
         self.layout_.addWidget(self._overview())
         if m.errors:
             self.layout_.addWidget(self._errors())
+        settings = SettingsPanel(m.name, m.settings)
+        settings.applied.connect(self._apply_settings)
+        self.layout_.addWidget(settings)
+        users = UsersPanel(self.client, m, can_grant_admin=True)
+        users.message.connect(self.message)
+        self.layout_.addWidget(users)
         self.layout_.addWidget(self._apps_panel())
         self.layout_.addWidget(self._history())
         self.layout_.addStretch()
@@ -110,7 +121,16 @@ class MachineConfigPage(QWidget):
         grid.addWidget(fact("Address", m.address or "Not set"), 1, 0)
         grid.addWidget(fact("NixOS", m.nixos_version), 1, 1)
         grid.addWidget(fact("Preset", m.preset), 1, 2)
-        panel.body.addLayout(grid)
+        row = QHBoxLayout()
+        row.setSpacing(24)
+        row.addLayout(grid, 1)
+        disk = ""
+        if m.disk_used_gb is not None and m.disk_total_gb:
+            disk = f"{gb(m.disk_used_gb)} / {gb(m.disk_total_gb)}"
+        for gauge in (RingGauge("CPU", m.cpu_percent), RingGauge("RAM", m.ram_percent),
+                      RingGauge("Disk", m.disk_percent, disk)):
+            row.addWidget(gauge, 0, Qt.AlignmentFlag.AlignVCenter)
+        panel.body.addLayout(row)
         return panel
 
     def _errors(self) -> Panel:
@@ -126,6 +146,7 @@ class MachineConfigPage(QWidget):
                 undo.clicked.connect(lambda: self.undo_requested.emit(m.name))
                 row.addWidget(undo)
             panel.body.addLayout(row)
+            details = QHBoxLayout()
             if error.log:
                 toggle = QPushButton("Show technical details")
                 toggle.setCheckable(True)
@@ -137,12 +158,24 @@ class MachineConfigPage(QWidget):
                 toggle.toggled.connect(log.setVisible)
                 toggle.toggled.connect(lambda on, t=toggle: t.setText(
                     "Hide technical details" if on else "Show technical details"))
-                details = QHBoxLayout()
                 details.addWidget(toggle)
-                details.addStretch()
-                panel.body.addLayout(details)
+            ask = QPushButton("Ask AI")
+            ask.setToolTip("Get an explanation and a suggested fix from Claude")
+            ask.clicked.connect(lambda _=False, e=error: self._ask_ai(e))
+            details.addWidget(ask)
+            details.addStretch()
+            panel.body.addLayout(details)
+            if error.log:
                 panel.body.addWidget(log)
         return panel
+
+    def _apply_settings(self, settings):
+        # TODO: send the settings to the server, which rebuilds the device with them.
+        self.machine.settings = settings
+        self.message.emit(f"Applying system settings to {self.machine.name}…")
+
+    def _ask_ai(self, error):
+        AskAIDialog(self.machine, error, self.client.get_preset(self.machine.preset), self).exec()
 
     def _apps_panel(self) -> Panel:
         panel = Panel()
@@ -150,12 +183,25 @@ class MachineConfigPage(QWidget):
 
         preset = self.client.get_preset(self.machine.preset)
         from_preset = preset.extra_apps if preset else []
-        note = QLabel(f"From the {self.machine.preset} preset: " + (", ".join(from_preset) or "none")
-                      + ". Change those on the Presets page.")
+        count = len(from_preset)
+        line = QHBoxLayout()
+        line.setSpacing(6)
+        note = QLabel(f"Includes {count} app{'' if count == 1 else 's'} from the {self.machine.preset} preset"
+                      + (" ·" if count else ". Change those on the Presets page."))
         note.setObjectName("Muted")
-        note.setWordWrap(True)
-        note.setStyleSheet("border: none;")
-        panel.body.addWidget(note)
+        line.addWidget(note)
+        if count:
+            preset_tags = static_tags(from_preset)
+            preset_tags.setVisible(False)
+            toggle = QPushButton("Show")
+            toggle.setProperty("link", True)
+            toggle.clicked.connect(lambda: (preset_tags.setVisible(not preset_tags.isVisible()),
+                                            toggle.setText("Hide" if preset_tags.isVisible() else "Show")))
+            line.addWidget(toggle)
+        line.addStretch()
+        panel.body.addLayout(line)
+        if count:
+            panel.body.addWidget(preset_tags)
 
         pending = self.client.pending_requests(self.machine.name)
         if pending:
@@ -170,6 +216,10 @@ class MachineConfigPage(QWidget):
             row.addWidget(review)
             panel.body.addLayout(row)
 
+        panel.body.addSpacing(4)
+        own = QLabel("On this device only")
+        own.setStyleSheet("font-weight: 600;")
+        panel.body.addWidget(own)
         self.picker = AppPicker(self.client, self.machine.extra_apps,
                                 f"Search nixpkgs for an app to add to {self.machine.name}",
                                 "No extra apps on this device yet.")

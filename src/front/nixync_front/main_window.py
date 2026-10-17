@@ -10,7 +10,7 @@ from nixync_front.api import ApiError, NixyncClient
 from nixync_front.config import Config
 from nixync_front.dialogs import AddAppsDialog, AddMachineDialog, UndoUpdateDialog
 from nixync_front.pages import MachineConfigPage, MachinesPage, PresetsPage, RequestsPage, UpdatesPage
-from nixync_front.widgets import dot, moon_icon, panel_icon, sun_icon
+from nixync_front.widgets import dot, moon_icon, panel_icon, safe_emit, sun_icon, themed_icon
 
 
 class _StatusSignals(QObject):
@@ -28,21 +28,26 @@ class _StatusCheck(QRunnable):
     def run(self):
         try:
             status = self.client.get_status()
-            self.signals.done.emit(True, status.get("hostname", "server"))
+            safe_emit(self.signals.done, True, status.get("hostname", "server"))
         except ApiError as e:
-            self.signals.done.emit(False, str(e))
+            safe_emit(self.signals.done, False, str(e))
 
 
 class MainWindow(QMainWindow):
     PAGES = ["Devices", "Requests", "Presets", "Updates"]
     SIDEBAR_WIDTH = 230
 
-    def __init__(self, config: Config):
+    sign_out_requested = Signal()
+
+    def __init__(self, config: Config, username: str = ""):
         super().__init__()
+        self.username = username
         self.config = config
         self.client = NixyncClient(config)
         self.setWindowTitle("Nixync")
         self.setWindowIcon(QIcon(str(style.ICONS / "app-icon.png")))
+        # Signing out closes this window; make sure it's really gone (timers, polling).
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.settings = QSettings("Nixync", "Nixync")
         self.resize(1360, 860)
         self._last_status: tuple[bool, str] | None = None
@@ -51,6 +56,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+B"), self, activated=self.toggle_sidebar)
 
         self.connection_dot = dot(style.OFFLINE, 8)
+        style.themed(self.connection_dot, self._paint_connection_dot)
         self.connection_label = QLabel(f"Connecting to {config.server_url}")
         status = QWidget()
         status_layout = QHBoxLayout(status)
@@ -58,6 +64,7 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.connection_dot)
         status_layout.addWidget(self.connection_label)
         self.statusBar().addWidget(status, 1)
+        style.styled(self.statusBar())
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_server)
@@ -65,20 +72,15 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.check_server)
 
     def _build_ui(self):
-        """Sidebar and pages. Rebuilt in place by toggle_theme so every color and icon updates."""
+        """Sidebar and pages. Theme switches restyle these in place (see style.themed)."""
         self.sidebar = QListWidget()
         self.sidebar.setObjectName("Sidebar")
         self.sidebar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.sidebar.addItems(self.PAGES)
 
-        self.machines = MachinesPage(self.client)
-        self.requests = RequestsPage(self.client)
-        self.presets = PresetsPage(self.client)
-        self.updates = UpdatesPage(self.client)
-        # Not in the sidebar; reached from a machine card's settings button.
-        self.machine_config = MachineConfigPage(self.client)
+        pages = self._make_pages()  # one per PAGES entry, in order, plus any extra pages after
         self.stack = QStackedWidget()
-        for page in (self.machines, self.requests, self.presets, self.updates, self.machine_config):
+        for page in pages:
             self.stack.addWidget(page)
 
         self.sidebar.currentRowChanged.connect(self.stack.setCurrentIndex)
@@ -86,23 +88,6 @@ class MainWindow(QMainWindow):
         # doesn't change the row, so switch pages on click too.
         self.sidebar.itemClicked.connect(lambda item: self.stack.setCurrentIndex(self.sidebar.row(item)))
         self.sidebar.setCurrentRow(0)
-
-        self.machines.add_machine_requested.connect(self.open_add_machine)
-        self.machines.change_presets_requested.connect(lambda: self.go_to("Presets"))
-        self.machines.configure_requested.connect(self.open_machine_config)
-        self.machines.requests_requested.connect(self.open_requests)
-        self.machines.add_apps_requested.connect(self.open_add_apps)
-        self.machine_config.requests_requested.connect(self.open_requests)
-        self.requests.machine_requested.connect(self.open_machine_config)
-        self.requests.changed.connect(self.update_request_counts)
-        self.requests.message.connect(lambda text: self.statusBar().showMessage(text, 5000))
-        self.machine_config.back_requested.connect(lambda: self.stack.setCurrentWidget(self.machines))
-        self.machine_config.undo_requested.connect(self.open_undo)
-        self.machine_config.apply_requested.connect(self.apply_machine_apps)
-        self.presets.deploy_requested.connect(lambda _preset: self.go_to("Updates"))
-        self.updates.undo_requested.connect(self.open_undo)
-        self.updates.configure_requested.connect(self.open_machine_config)
-        self.updates.message.connect(lambda text: self.statusBar().showMessage(text, 5000))
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -114,40 +99,54 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.sidebar_rail)
         self.set_sidebar_visible(self.settings.value("sidebar/visible", True, type=bool))
         layout.addWidget(self.stack, 1)
-        self.setCentralWidget(central)  # deletes the previous one when rebuilding
+        self.setCentralWidget(central)
+        # Each part carries the theme stylesheet itself (see style.styled); hidden pages are
+        # restyled when they're shown, so a theme switch only touches what's on screen.
+        for part in (self.sidebar_column, self.sidebar_rail):
+            style.styled(part)
+        for page in pages:
+            style.styled(page, lazy=True)
+        self.stack.currentChanged.connect(lambda _i: style.restyle_if_stale(self.stack.currentWidget()))
+        self._after_build()
+
+    def show_message(self, text: str):
+        self.statusBar().showMessage(text, 5000)
+
+    def _make_pages(self) -> list[QWidget]:
+        self.machines = MachinesPage(self.client)
+        self.requests = RequestsPage(self.client)
+        self.presets = PresetsPage(self.client)
+        self.updates = UpdatesPage(self.client)
+        # Not in the sidebar; reached from a device's settings button.
+        self.machine_config = MachineConfigPage(self.client)
+
+        self.machines.add_machine_requested.connect(self.open_add_machine)
+        self.machines.change_presets_requested.connect(lambda: self.go_to("Presets"))
+        self.machines.configure_requested.connect(self.open_machine_config)
+        self.machines.requests_requested.connect(self.open_requests)
+        self.machines.add_apps_requested.connect(self.open_add_apps)
+        self.machine_config.requests_requested.connect(self.open_requests)
+        self.requests.machine_requested.connect(self.open_machine_config)
+        self.requests.changed.connect(self.update_request_counts)
+        self.requests.message.connect(self.show_message)
+        self.machine_config.back_requested.connect(lambda: self.stack.setCurrentWidget(self.machines))
+        self.machine_config.undo_requested.connect(self.open_undo)
+        self.machine_config.apply_requested.connect(self.apply_machine_apps)
+        self.machine_config.message.connect(self.show_message)
+        self.presets.deploy_requested.connect(lambda _preset: self.go_to("Updates"))
+        self.updates.undo_requested.connect(self.open_undo)
+        self.updates.configure_requested.connect(self.open_machine_config)
+        self.updates.message.connect(self.show_message)
+        return [self.machines, self.requests, self.presets, self.updates, self.machine_config]
+
+    def _after_build(self):
         self.update_request_counts()
 
     def toggle_theme(self):
+        """Switch theme in place: restyle, and let themed widgets redraw their icons and colors."""
         theme = "light" if style.IS_DARK else "dark"
         self.settings.setValue("appearance/theme", theme)
-
-        # Remember where the user is, then rebuild the pages in the new colors.
-        on_device = self.stack.currentWidget() is self.machine_config and self.machine_config.machine
-        device = self.machine_config.machine.name if on_device else None
-        index = self.stack.currentIndex()
-        request_filter = self.requests.machine_filter
-
-        was_active = self.isActiveWindow()
-        self.setUpdatesEnabled(False)
         style.apply(QApplication.instance(), theme)
-        self._build_ui()
-        if request_filter:
-            self.requests.filter_machine(request_filter)
-        if device:
-            self.open_machine_config(device)
-        else:
-            self.sidebar.setCurrentRow(min(index, len(self.PAGES) - 1))
-            self.stack.setCurrentIndex(index)
-        if self._last_status:
-            self._on_status(*self._last_status)
-        else:
-            self.connection_dot.setStyleSheet(f"background: {style.OFFLINE}; border-radius: 4px;")
-        self.setUpdatesEnabled(True)
-        # Rebuilding deleted the focused widget (the theme button), which drops the window's
-        # active state; restore it so keyboard shortcuts like Ctrl+B keep working.
-        if was_active:
-            self.activateWindow()
-            self.stack.setFocus()
 
     def _sidebar_column(self) -> QWidget:
         column = QWidget()
@@ -163,12 +162,15 @@ class MainWindow(QMainWindow):
         brand_layout.setContentsMargins(18, 18, 16, 8)
         brand_layout.setSpacing(10)
         logo = QLabel()
-        pixmap = QPixmap(str(style.logo_path()))
-        ratio = self.devicePixelRatioF()
-        logo_px = pixmap.scaled(int(36 * ratio), int(36 * ratio), Qt.AspectRatioMode.KeepAspectRatio,
-                                Qt.TransformationMode.SmoothTransformation)
-        logo_px.setDevicePixelRatio(ratio)
-        logo.setPixmap(logo_px)
+
+        def paint_logo():
+            ratio = self.devicePixelRatioF()
+            pixmap = QPixmap(str(style.logo_path())).scaled(
+                int(36 * ratio), int(36 * ratio), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+            pixmap.setDevicePixelRatio(ratio)
+            logo.setPixmap(pixmap)
+        style.themed(logo, paint_logo)
         name = QLabel("Nixync")
         name.setObjectName("BrandName")
         brand_layout.addWidget(logo)
@@ -178,15 +180,28 @@ class MainWindow(QMainWindow):
         layout.addWidget(brand)
         layout.addWidget(self.sidebar, 1)
 
-        theme = QPushButton("  Light mode" if style.IS_DARK else "  Dark mode")
+        theme = QPushButton()
         theme.setObjectName("ThemeToggle")
-        theme.setIcon(sun_icon(style.MUTED) if style.IS_DARK else moon_icon(style.MUTED))
         theme.setIconSize(QSize(18, 18))
-        theme.setToolTip("Switch to the light theme" if style.IS_DARK else "Switch to the dark theme")
         theme.clicked.connect(self.toggle_theme)
+        style.themed(theme, lambda: (theme.setText("  Light mode" if style.IS_DARK else "  Dark mode"),
+                                     self._paint_theme_button(theme)))
         footer = QVBoxLayout()
         footer.setContentsMargins(10, 0, 10, 14)
+        footer.setSpacing(4)
         footer.addWidget(theme)
+        if self.username:
+            account = QHBoxLayout()
+            account.setContentsMargins(12, 6, 4, 0)
+            who = QLabel(self.username)
+            who.setObjectName("Muted")
+            who.setToolTip(f"Signed in to {self.config.server_url}")
+            account.addWidget(who, 1)
+            sign_out = QPushButton("Sign out")
+            sign_out.setProperty("link", True)
+            sign_out.clicked.connect(self.sign_out_requested)
+            account.addWidget(sign_out)
+            footer.addLayout(account)
         layout.addLayout(footer)
         return column
 
@@ -202,18 +217,22 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         theme = QToolButton()
         theme.setObjectName("SidebarToggle")
-        theme.setIcon(sun_icon(style.MUTED) if style.IS_DARK else moon_icon(style.MUTED))
         theme.setIconSize(QSize(18, 18))
-        theme.setToolTip("Switch to the light theme" if style.IS_DARK else "Switch to the dark theme")
         theme.clicked.connect(self.toggle_theme)
+        style.themed(theme, lambda: self._paint_theme_button(theme))
         layout.addWidget(theme, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addSpacing(14)
         return rail
 
+    @staticmethod
+    def _paint_theme_button(button):
+        button.setIcon(sun_icon(style.MUTED) if style.IS_DARK else moon_icon(style.MUTED))
+        button.setToolTip("Switch to the light theme" if style.IS_DARK else "Switch to the dark theme")
+
     def _sidebar_button(self, tip: str) -> QToolButton:
         button = QToolButton()
         button.setObjectName("SidebarToggle")
-        button.setIcon(panel_icon(style.MUTED))
+        themed_icon(button, panel_icon)
         button.setIconSize(QSize(18, 18))
         button.setToolTip(tip)
         button.clicked.connect(self.toggle_sidebar)
@@ -293,12 +312,20 @@ class MainWindow(QMainWindow):
         job.signals.done.connect(self._on_status, Qt.ConnectionType.QueuedConnection)
         QThreadPool.globalInstance().start(job)
 
+    def _paint_connection_dot(self):
+        ok = self._last_status[0] if self._last_status else None
+        color = style.OFFLINE if ok is None else style.OK if ok else style.PROBLEM
+        self.connection_dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
+
     def _on_status(self, ok: bool, detail: str):
         self._last_status = (ok, detail)
-        color = style.OK if ok else style.PROBLEM
-        self.connection_dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
+        self._paint_connection_dot()
         if ok:
             self.connection_label.setText(f"Connected to {detail} ({self.config.server_url})")
         else:
             self.connection_label.setText(f"Can't reach server at {self.config.server_url}")
             self.connection_label.setToolTip(detail)
+
+    def closeEvent(self, event):
+        self.timer.stop()  # no more server polling once the window is closed
+        super().closeEvent(event)

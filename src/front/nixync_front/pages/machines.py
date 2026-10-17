@@ -1,7 +1,7 @@
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QPushButton, QTableWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -9,11 +9,12 @@ from nixync_front import style
 from nixync_front.api import NixyncClient
 from nixync_front.sample_data import Health, Machine
 from nixync_front.widgets import (
-    SegmentButton, ago, centered, download_icon, gear_icon, page_header, primary_button, search_icon,
-    status_text,
+    usage_color,
+    ago, centered, download_icon, gear_icon, page_header, primary_button, search_icon,
+    status_text, themed_icon,
 )
 
-NEEDS_ATTENTION = "Needs attention"
+WITH_ISSUES = "With issues"  # status filter option: Problem or Offline
 
 STATUS = {
     Health.OK: ("Online", "ok"),
@@ -28,14 +29,6 @@ CHECK, HOST, GROUP, PRESET, NIXOS, STATUS_COL, REQUESTS, CPU, RAM, DISK, SETTING
 def gb(value: float) -> str:
     """Disk sizes: "842 GB", "1.2 TB"."""
     return f"{value / 1000:.1f} TB" if value >= 1000 else f"{value:.0f} GB"
-
-
-def usage_color(percent: float) -> str:
-    if percent >= 80:
-        return style.PROBLEM
-    if percent >= 60:
-        return style.WARNING
-    return style.OK
 
 
 class UsageBar(QWidget):
@@ -94,7 +87,6 @@ class MachinesPage(QWidget):
         super().__init__()
         self.client = client
         self.machines = client.list_machines()
-        self.group = "All"
         self.selected: set[str] = set()
         self.shown: list[Machine] = []
 
@@ -105,7 +97,8 @@ class MachinesPage(QWidget):
         top = QHBoxLayout()
         top.setSpacing(16)
         top.addWidget(page_header("Devices"))
-        top.addWidget(self._attention_count(), 0, Qt.AlignmentFlag.AlignVCenter)
+        self.attention = self._attention_count()
+        top.addWidget(self.attention, 0, Qt.AlignmentFlag.AlignVCenter)
         top.addStretch()
         add = QPushButton("Add device")
         add.clicked.connect(self.add_machine_requested)
@@ -119,16 +112,6 @@ class MachinesPage(QWidget):
         tab_row.setFixedHeight(36)
         tabs = QHBoxLayout(tab_row)
         tabs.setContentsMargins(0, 0, 0, 0)
-        self.segments = QButtonGroup(self)
-        self.group_buttons: dict[str, QPushButton] = {}
-        for group in ("All", NEEDS_ATTENTION):
-            button = SegmentButton()
-            button.setChecked(group == "All")
-            button.clicked.connect(lambda _=False, g=group: self._set_group(g))
-            self.segments.addButton(button)
-            self.group_buttons[group] = button
-            tabs.addWidget(button)
-        tabs.addSpacing(8)
         self.count = QLabel()
         self.count.setObjectName("Muted")
         tabs.addWidget(self.count)
@@ -139,7 +122,7 @@ class MachinesPage(QWidget):
         tabs.addSpacing(8)
         self.add_apps = QPushButton(" Add apps…")
         self.add_apps.setStyleSheet("min-height: 30px; max-height: 30px; padding: 0 12px;")
-        self.add_apps.setIcon(download_icon(style.TEXT))
+        themed_icon(self.add_apps, download_icon, "text")
         self.add_apps.setIconSize(QSize(16, 16))
         self.add_apps.setToolTip("Add apps to every selected device")
         self.add_apps.clicked.connect(lambda: self.add_apps_requested.emit(self.selected_names()))
@@ -151,12 +134,13 @@ class MachinesPage(QWidget):
         filters.setSpacing(10)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search by hostname")
-        self.search.addAction(search_icon(style.MUTED), QLineEdit.ActionPosition.LeadingPosition)
+        themed_icon(self.search.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition), search_icon,
+                    owner=self.search)
         self.search.setClearButtonEnabled(True)
         self.search.setMinimumWidth(240)
         self.search.textChanged.connect(self.refresh)
         filters.addWidget(self.search, 1)
-        self.status_filter = self._combo("All statuses", [label for label, _ in STATUS.values()])
+        self.status_filter = self._combo("All statuses", [label for label, _ in STATUS.values()] + [WITH_ISSUES])
         self.group_filter = self._combo("All groups", sorted({m.group for m in self.machines}))
         self.preset_filter = self._combo("All presets", sorted({m.preset for m in self.machines}))
         for combo in (self.status_filter, self.group_filter, self.preset_filter):
@@ -212,38 +196,34 @@ class MachinesPage(QWidget):
         return combo
 
     def _attention_count(self) -> QPushButton:
-        count = len(self._matches_group(NEEDS_ATTENTION))
+        count = len([m for m in self.machines if m.health is not Health.OK])
         button = QPushButton(f"{count} with issues")
         button.setObjectName("AttentionCount")
         button.setToolTip("Show only devices with problems")
         button.setVisible(bool(count))
-        button.clicked.connect(lambda: self._set_group(NEEDS_ATTENTION))
+        button.clicked.connect(lambda: self.status_filter.setCurrentText(WITH_ISSUES))
         return button
 
-    def _matches_group(self, group: str) -> list[Machine]:
-        if group == NEEDS_ATTENTION:
-            return [m for m in self.machines if m.health is not Health.OK]
-        return list(self.machines)
-
-    def _set_group(self, group: str):
-        self.group = group
-        self.group_buttons[group].setChecked(True)
-        self.refresh()
+    @staticmethod
+    def _status_matches(m: Machine, status: str | None) -> bool:
+        if status is None:
+            return True
+        if status == WITH_ISSUES:
+            return m.health is not Health.OK
+        return STATUS[m.health][0] == status
 
     def _visible(self) -> list[Machine]:
         needle = self.search.text().strip().lower()
         status = self.status_filter.currentData()
         group = self.group_filter.currentData()
         preset = self.preset_filter.currentData()
-        return [m for m in self._matches_group(self.group)
+        return [m for m in self.machines
                 if (not needle or needle in m.name.lower())
-                and status in (None, STATUS[m.health][0])
+                and self._status_matches(m, status)
                 and group in (None, m.group)
                 and preset in (None, m.preset)]
 
     def refresh(self):
-        for group, button in self.group_buttons.items():
-            button.setText(f"{group} ({len(self._matches_group(group))})")
         self.shown = self._visible()
         self.table.clearSpans()
         self.table.setRowCount(0)
@@ -302,7 +282,7 @@ class MachinesPage(QWidget):
 
         settings = QToolButton()
         settings.setObjectName("SettingsButton")
-        settings.setIcon(gear_icon(style.MUTED))
+        themed_icon(settings, gear_icon)
         settings.setIconSize(QSize(18, 18))
         settings.setToolTip(f"Settings for {m.name}")
         settings.clicked.connect(lambda _=False, n=m.name: self.configure_requested.emit(n))

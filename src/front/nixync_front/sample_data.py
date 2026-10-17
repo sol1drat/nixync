@@ -27,6 +27,32 @@ class MachineError:
 
 
 @dataclass
+class LocalUser:
+    """A login account on a device: NixOS users.users.<name>."""
+    name: str
+    full_name: str = ""
+    admin: bool = False  # member of "wheel" (can use sudo)
+
+
+@dataclass
+class SystemSettings:
+    """The NixOS options Nixync lets you edit per device."""
+    hostname: str
+    timezone: str = "Asia/Tbilisi"
+    nameservers: list[str] = field(default_factory=lambda: ["9.9.9.9"])
+    firewall: bool = True
+    open_tcp_ports: list[int] = field(default_factory=lambda: [22])
+    ssh: bool = True
+    ssh_password_login: bool = False
+    ssh_root_login: str = "no"  # "no" | "prohibit-password" | "yes"
+    bluetooth: bool = False
+    sound: bool = True
+    docker: bool = False
+    allow_unfree: bool = True
+    users: list[LocalUser] = field(default_factory=list)
+
+
+@dataclass
 class Machine:
     name: str
     preset: str
@@ -41,6 +67,11 @@ class Machine:
     last_seen: datetime | None = None
     disk_used_gb: float | None = None
     disk_total_gb: float | None = None
+    settings: SystemSettings | None = None
+
+    def __post_init__(self):
+        if self.settings is None:
+            self.settings = SystemSettings(hostname=self.name)
 
     @property
     def disk_percent(self) -> float | None:
@@ -246,3 +277,24 @@ CURRENT_UPDATE = Update(
         HostResult("lab-04", "Couldn't connect, will try again when it's back online", (_D, _F, _P, _P)),
     ],
 )
+
+# Servers: no desktop extras; the build server runs Docker and serves its cache on 8081.
+for _m in MACHINES:
+    if _m.preset != "Workstation":
+        _m.settings.sound = False
+    if _m.name == "build-01":
+        _m.settings.docker = True
+        _m.settings.open_tcp_ports = [22, 8081]
+    if _m.name == "web-01":
+        _m.settings.open_tcp_ports = [22, 80, 443]
+    if _m.preset == "Workstation":
+        _m.settings.bluetooth = True
+
+# Who logs in where: lab machines share a student account plus a lab admin.
+for _m in MACHINES:
+    if _m.preset == "Workstation":
+        _m.settings.users = [LocalUser("labadmin", "Lab administrator", admin=True),
+                             LocalUser("student", "Student")]
+    else:
+        _m.settings.users = [LocalUser("ops", "Operations", admin=True)]
+MACHINES[0].settings.users.append(LocalUser("student14", "Nino Beridze"))

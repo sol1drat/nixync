@@ -1,13 +1,18 @@
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
+from nixync_front import style
 from nixync_front.api import NixyncClient
-from nixync_front.nixos_search import SearchError
-from nixync_front.widgets import clear_layout
+from nixync_front.nixos_search import Package, SearchError
+from nixync_front.widgets import FlowLayout, close_icon, safe_emit, search_icon, themed_icon
 
-WIDTH = 520
+WIDTH = 560
+RESULT_ROW_HEIGHT = 54
+VISIBLE_RESULTS = 6
 
 
 class _SearchSignals(QObject):
@@ -24,13 +29,95 @@ class _Search(QRunnable):
 
     def run(self):
         try:
-            self.signals.done.emit(self.seq, self.client.search_apps(self.query), "", False)
+            safe_emit(self.signals.done, self.seq, self.client.search_apps(self.query), "", False)
         except SearchError as e:
-            self.signals.done.emit(self.seq, [], str(e), e.offline)
+            safe_emit(self.signals.done, self.seq, [], str(e), e.offline)
+
+
+def static_tags(names: list[str]) -> QWidget:
+    """Read-only app tags, e.g. the apps a device gets from its preset."""
+    box = QWidget()
+    flow = FlowLayout(box, spacing=6)
+    for name in names:
+        tag = QLabel(name)
+        tag.setObjectName("AppTagStatic")
+        flow.addWidget(tag)
+    return box
+
+
+class AppTag(QFrame):
+    """One app in the list: its name and a small × to remove it."""
+
+    removed = Signal(str)
+
+    def __init__(self, name: str, pending: bool):
+        super().__init__()
+        self.setObjectName("AppTag")
+        self.setProperty("pending", pending)
+        if pending:
+            self.setToolTip(f"{name}: not applied yet")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(9, 2, 3, 2)
+        layout.setSpacing(2)
+        label = QLabel(name)
+        label.setObjectName("AppTagName")
+        layout.addWidget(label)
+        remove = QToolButton()
+        remove.setObjectName("TagRemove")
+        themed_icon(remove, close_icon)
+        remove.setIconSize(QSize(10, 10))
+        remove.setToolTip(f"Remove {name}")
+        remove.clicked.connect(lambda: self.removed.emit(name))
+        layout.addWidget(remove)
+
+
+class ResultRow(QWidget):
+    """A search result: name and version on top, description below, Add on the right."""
+
+    add_clicked = Signal(str)
+
+    def __init__(self, package: Package, added: bool, text_width: int):
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 6, 10, 6)
+        layout.setSpacing(12)
+
+        text = QVBoxLayout()
+        text.setSpacing(1)
+        title = QHBoxLayout()
+        title.setSpacing(8)
+        name = QLabel(package.name)
+        name.setStyleSheet("font-weight: 600;")
+        title.addWidget(name)
+        if package.version:
+            version = QLabel(package.version)
+            version.setObjectName("Muted")
+            version.setStyleSheet("font-size: 12px;")
+            title.addWidget(version)
+        title.addStretch()
+        text.addLayout(title)
+        description = package.description or "No description"
+        desc = QLabel()
+        desc.setObjectName("Muted")
+        desc.setStyleSheet("font-size: 12px;")
+        desc.setText(desc.fontMetrics().elidedText(description, Qt.TextElideMode.ElideRight, text_width))
+        desc.setToolTip(description)
+        text.addWidget(desc)
+        layout.addLayout(text, 1)
+
+        if added:
+            done = QLabel("Added")
+            done.setObjectName("Muted")
+            layout.addWidget(done)
+        else:
+            add = QPushButton("Add")
+            add.setObjectName("SmallButton")
+            add.clicked.connect(lambda: self.add_clicked.emit(package.name))
+            layout.addWidget(add)
 
 
 class AppPicker(QWidget):
-    """A list of apps with Remove buttons and a search.nixos.org search box to add more.
+    """A compact list of apps (tags) and a search.nixos.org search box to add more.
 
     `saved` is what is currently applied; `apps` is the edited list. Emits
     `changed` whenever `apps` changes.
@@ -46,37 +133,44 @@ class AppPicker(QWidget):
         self.apps = list(saved)
         self.empty_text = empty_text
         self.mark_unsaved = mark_unsaved
+        self.packages: list[Package] = []
         self._seq = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
-        rows = QWidget()
-        self.rows = QVBoxLayout(rows)
-        self.rows.setContentsMargins(0, 0, 0, 0)
-        self.rows.setSpacing(6)
-        layout.addWidget(rows)
+        self.empty = QLabel(empty_text)
+        self.empty.setObjectName("Muted")
+        layout.addWidget(self.empty)
+        self.tags = QWidget()
+        self.tag_layout = FlowLayout(self.tags, spacing=6)
+        layout.addWidget(self.tags)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText(placeholder)
+        themed_icon(self.search.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition), search_icon,
+                    owner=self.search)
         self.search.setClearButtonEnabled(True)
         self.search.setMaximumWidth(WIDTH)
         self.search.textChanged.connect(self._schedule_search)
-        self.search.returnPressed.connect(self._add_first_result)
+        self.search.returnPressed.connect(self._add_current)
+        self.search.installEventFilter(self)  # arrow keys move through the results
         layout.addWidget(self.search)
 
         self.status = QLabel()
         self.status.setObjectName("Muted")
-        self.status.setStyleSheet("border: none;")
+        self.status.setStyleSheet("font-size: 12px;")
         self.status.setVisible(False)
         layout.addWidget(self.status)
 
         self.results = QListWidget()
+        self.results.setObjectName("SearchResults")
         self.results.setMaximumWidth(WIDTH)
         self.results.setVisible(False)
         self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.results.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.results.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.results.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.results.itemClicked.connect(lambda item: self.add(item.data(Qt.ItemDataRole.UserRole)))
         layout.addWidget(self.results)
 
@@ -86,7 +180,7 @@ class AppPicker(QWidget):
         self.debounce.setInterval(300)
         self.debounce.timeout.connect(self._run_search)
 
-        self._render_rows()
+        self._render_tags()
 
     # --- the edited list -------------------------------------------------
 
@@ -107,45 +201,39 @@ class AppPicker(QWidget):
         if not name or name in self.apps:
             return
         self.apps.append(name)
-        self.search.clear()
-        self._render_rows()
+        self._render_tags()
+        self._render_results()  # the row now shows "Added"; keep the results open for more
         self.changed.emit()
 
     def remove(self, name: str):
         self.apps.remove(name)
-        self._render_rows()
+        self._render_tags()
+        self._render_results()
         self.changed.emit()
 
     def discard(self):
         self.apps = list(self.saved)
-        self._render_rows()
+        self._render_tags()
+        self._render_results()
         self.changed.emit()
 
     def mark_saved(self):
         self.saved = list(self.apps)
-        self._render_rows()
+        self._render_tags()
         self.changed.emit()
 
-    def _render_rows(self):
-        clear_layout(self.rows)
-        if not self.apps:
-            empty = QLabel(self.empty_text)
-            empty.setObjectName("Muted")
-            empty.setStyleSheet("border: none;")
-            self.rows.addWidget(empty)
+    def _render_tags(self):
+        while (item := self.tag_layout.takeAt(0)) is not None:
+            if widget := item.widget():
+                widget.hide()
+                widget.deleteLater()
         for app in self.apps:
-            row = QWidget()
-            row.setMaximumWidth(WIDTH)
-            layout = QHBoxLayout(row)
-            layout.setContentsMargins(0, 0, 0, 0)
-            note = "" if app in self.saved or not self.mark_unsaved else "  <i>(not applied yet)</i>"
-            label = QLabel(f"<b>{app}</b>{note}")
-            label.setStyleSheet("border: none;")
-            layout.addWidget(label, 1)
-            remove = QPushButton("Remove")
-            remove.clicked.connect(lambda _=False, a=app: self.remove(a))
-            layout.addWidget(remove)
-            self.rows.addWidget(row)
+            tag = AppTag(app, pending=self.mark_unsaved and app not in self.saved)
+            tag.removed.connect(self.remove)
+            self.tag_layout.addWidget(tag)
+        self.empty.setVisible(not self.apps)
+        self.tags.setVisible(bool(self.apps))
+        self.tags.updateGeometry()
 
     # --- search ----------------------------------------------------------
 
@@ -153,6 +241,7 @@ class AppPicker(QWidget):
         self._seq += 1  # drop any search still in flight
         if not text.strip():
             self.debounce.stop()
+            self.packages = []
             self.results.clear()
             self.results.setVisible(False)
             self.status.setVisible(False)
@@ -168,35 +257,75 @@ class AppPicker(QWidget):
     def _on_results(self, seq: int, packages: list, error: str, offline: bool):
         if seq != self._seq:
             return
-        self.results.clear()
+        self.packages = packages
         if error:
+            self.packages = []
+            self.results.setVisible(False)
             self._show_status("Couldn't reach search.nixos.org. Check your internet connection." if offline else
                               "search.nixos.org didn't accept the search. Its index may have changed: "
                               "check nixos_search_index in config.toml.")
             self.status.setToolTip(error)
-            self.results.setVisible(False)
             return
-        matches = [p for p in packages if p.name not in self.apps]
-        if not matches:
-            self._show_status(f"No packages match “{self.search.text().strip()}” on search.nixos.org.")
-            self.results.setVisible(False)
+        self._render_results()
+
+    def _render_results(self):
+        if not self.search.text().strip():
             return
-        self._show_status("Click a package to add it, or press Enter to add the first one.")
-        for package in matches:
-            version = f"  {package.version}" if package.version else ""
-            item = QListWidgetItem(f"{package.name}{version} — {package.description or 'No description'}")
-            item.setData(Qt.ItemDataRole.UserRole, package.name)
-            item.setToolTip(f"Add {package.name}{version}\n{package.description}")
+        current = self.results.currentRow()
+        self.results.clear()
+        if not self.packages:
+            self.results.setVisible(False)
+            self._show_status(f"No packages match “{self.search.text().strip()}”.")
+            return
+        text_width = WIDTH - 150
+        for package in self.packages:
+            added = package.name in self.apps
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, RESULT_ROW_HEIGHT))
+            item.setData(Qt.ItemDataRole.UserRole, None if added else package.name)
+            if added:
+                item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.results.addItem(item)
-        rows = min(self.results.count(), 8)
-        self.results.setFixedHeight(rows * self.results.sizeHintForRow(0) + 2 * self.results.frameWidth() + 4)
+            row = ResultRow(package, added, text_width)
+            row.add_clicked.connect(self.add)
+            self.results.setItemWidget(item, row)
+        self.results.setFixedHeight(min(len(self.packages), VISIBLE_RESULTS) * RESULT_ROW_HEIGHT
+                                    + 2 * self.results.frameWidth())
         self.results.setVisible(True)
+        self._select(current if current >= 0 else 0, step=1)
+        self._show_status(f"{len(self.packages)} results from search.nixos.org · ↑↓ to choose, Enter to add")
+
+    def _select(self, row: int, step: int):
+        """Highlight the nearest addable result from `row`, moving in `step` direction."""
+        count = self.results.count()
+        while 0 <= row < count:
+            if self.results.item(row).data(Qt.ItemDataRole.UserRole):
+                self.results.setCurrentRow(row)
+                self.results.scrollToItem(self.results.item(row))
+                return
+            row += step
+        if step == 1 and count:
+            self._select(min(row, count) - 1, -1)  # nothing below; fall back upwards
+
+    def _add_current(self):
+        item = self.results.currentItem() if self.results.isVisible() else None
+        if item:
+            self.add(item.data(Qt.ItemDataRole.UserRole))
 
     def _show_status(self, text: str):
         self.status.setText(text)
         self.status.setToolTip("")
         self.status.setVisible(True)
 
-    def _add_first_result(self):
-        if self.results.isVisible() and self.results.count():
-            self.add(self.results.item(0).data(Qt.ItemDataRole.UserRole))
+    def eventFilter(self, obj, event):
+        if obj is self.search and event.type() == QEvent.Type.KeyPress and self.results.isVisible():
+            if event.key() == Qt.Key.Key_Down:
+                self._select(self.results.currentRow() + 1, 1)
+                return True
+            if event.key() == Qt.Key.Key_Up:
+                self._select(self.results.currentRow() - 1, -1)
+                return True
+            if event.key() == Qt.Key.Key_Escape:
+                self.search.clear()
+                return True
+        return super().eventFilter(obj, event)

@@ -108,10 +108,18 @@ class RequestsPage(QWidget):
         text = QVBoxLayout()
         text.setSpacing(4)
         description = self.client.describe_app(request.app)
-        title = QLabel(f"<b>{request.app}</b>" + (f"  <span style='color:{style.MUTED}'>{description}</span>"
-                                                   if description else ""))
-        title.setStyleSheet("font-size: 15px; border: none;")
-        text.addWidget(title)
+        title = QHBoxLayout()
+        title.setSpacing(8)
+        name = QLabel(request.app)
+        name.setStyleSheet("font-size: 15px; font-weight: 600; border: none;")
+        title.addWidget(name)
+        if description:
+            desc = QLabel(description)
+            desc.setObjectName("Muted")  # muted color comes from the stylesheet, so it follows the theme
+            desc.setStyleSheet("font-size: 15px; border: none;")
+            title.addWidget(desc)
+        title.addStretch()
+        text.addLayout(title)
         meta = QLabel(f"Requested by <b>{request.requested_by}</b> on "
                       f"<a href='#'>{request.machine}</a> · {ago(request.when)}")
         meta.setStyleSheet("border: none;")
