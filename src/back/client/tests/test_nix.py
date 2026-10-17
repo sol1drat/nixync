@@ -16,7 +16,7 @@ def test_an_empty_config_still_renders_a_valid_module():
 
     # A NixOS module is a function of its arguments, then an attribute set. The file
     # opens with a comment, so check the module shape rather than the first character.
-    assert "{ config, pkgs, ... }:" in text
+    assert "{ config, lib, pkgs, ... }:" in text
     assert text.rstrip().endswith("}")
     assert text.count("{") == text.count("}"), "braces balance"
     assert "environment.systemPackages" in text
@@ -67,20 +67,24 @@ def test_settings_are_rendered_as_nixos_options():
         )
     )
 
-    assert 'networking.hostName = "lab-05";' in text
-    assert 'time.timeZone = "Europe/London";' in text
-    assert "networking.firewall.enable = true;" in text
-    assert "networking.firewall.allowedTCPPorts = [ 22 80 ];" in text
-    assert "services.openssh.enable = true;" in text
-    assert 'services.openssh.settings.PermitRootLogin = "prohibit-password";' in text
-    assert "virtualisation.docker.enable = true;" in text
+    # Scalars carry lib.mkDefault so they cannot clash with the machine's own
+    # configuration; see test_scalar_settings_are_emitted_as_defaults.
+    assert 'networking.hostName = lib.mkDefault "lab-05";' in text
+    assert 'time.timeZone = lib.mkDefault "Europe/London";' in text
+    assert "networking.firewall.enable = lib.mkDefault true;" in text
+    assert "networking.firewall.allowedTCPPorts = [ 22 80 ];" in text, "lists merge"
+    assert "services.openssh.enable = lib.mkDefault true;" in text
+    assert (
+        'services.openssh.settings.PermitRootLogin = lib.mkDefault "prohibit-password";'
+    ) in text
+    assert "virtualisation.docker.enable = lib.mkDefault true;" in text
 
 
 def test_booleans_render_as_nix_booleans_not_python_ones():
     """"True" is not valid Nix."""
     text = render(MachineConfig(settings=SystemSettings(firewall=False, docker=False)))
 
-    assert "networking.firewall.enable = false;" in text
+    assert "networking.firewall.enable = lib.mkDefault false;" in text
     assert "True" not in text and "False" not in text
 
 
@@ -207,3 +211,89 @@ def test_every_shape_of_config_parses_as_nix(config, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
+
+
+# -- coexisting with a machine's own configuration --------------------------
+
+
+def test_scalar_settings_are_emitted_as_defaults():
+    """NixOS refuses two definitions of a scalar option, even identical ones.
+
+    Emitting these bare broke a real machine: its configuration.nix already set
+    nixpkgs.config.allowUnfree, so every rebuild failed once nixync.nix was imported.
+    """
+    text = render(MachineConfig(settings=SystemSettings(hostname="lab-05")))
+
+    for option in (
+        "networking.hostName",
+        "networking.firewall.enable",
+        "time.timeZone",
+        "services.openssh.enable",
+        "services.openssh.settings.PasswordAuthentication",
+        "services.openssh.settings.PermitRootLogin",
+        "hardware.bluetooth.enable",
+        "services.pipewire.enable",
+        "virtualisation.docker.enable",
+        "nixpkgs.config.allowUnfree",
+    ):
+        line = next(l for l in text.splitlines() if l.strip().startswith(option))
+        assert "lib.mkDefault" in line, f"{option} would conflict with an existing config"
+
+
+def test_packages_are_not_forced_so_they_add_to_what_the_machine_has():
+    """systemPackages is a list: lists merge, so the operator keeps their own."""
+    text = render(MachineConfig(packages=["git"]))
+
+    packages = next(l for l in text.splitlines() if "systemPackages" in l)
+    assert "mkDefault" not in packages
+
+
+def test_lib_is_in_scope_for_mkdefault():
+    """Using lib.mkDefault without taking lib as a module argument is a Nix error."""
+    assert "{ config, lib, pkgs, ... }:" in render(MachineConfig())
+
+
+def test_the_module_coexists_with_a_configuration_that_sets_the_same_options(tmp_path):
+    """Evaluated by the Nix module system, which is what rejected the old output."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("nix-instantiate"):
+        pytest.skip("nix-instantiate is not installed")
+
+    (tmp_path / "theirs.nix").write_text(
+        "{ config, pkgs, ... }:\n"
+        '{ nixpkgs.config.allowUnfree = true;\n  networking.hostName = "their-box"; }\n'
+    )
+    (tmp_path / "nixync.nix").write_text(
+        render(MachineConfig(settings=SystemSettings(hostname="lab-05")))
+    )
+    (tmp_path / "eval.nix").write_text(
+        "let pkgs = import <nixpkgs> {}; lib = pkgs.lib;\n"
+        "  r = lib.evalModules { specialArgs = { pkgs = pkgs; }; modules = [\n"
+        "    { options.networking.hostName = lib.mkOption { type = lib.types.str; default = \"\"; };\n"
+        "      options.nixpkgs.config.allowUnfree = lib.mkOption { type = lib.types.bool; default = false; };\n"
+        "      options.networking.nameservers = lib.mkOption { type = lib.types.listOf lib.types.str; default = []; };\n"
+        "      options.networking.firewall.enable = lib.mkOption { type = lib.types.bool; default = true; };\n"
+        "      options.networking.firewall.allowedTCPPorts = lib.mkOption { type = lib.types.listOf lib.types.int; default = []; };\n"
+        "      options.time.timeZone = lib.mkOption { type = lib.types.str; default = \"UTC\"; };\n"
+        "      options.services.openssh.enable = lib.mkOption { type = lib.types.bool; default = false; };\n"
+        "      options.services.openssh.settings.PasswordAuthentication = lib.mkOption { type = lib.types.bool; default = true; };\n"
+        "      options.services.openssh.settings.PermitRootLogin = lib.mkOption { type = lib.types.str; default = \"no\"; };\n"
+        "      options.hardware.bluetooth.enable = lib.mkOption { type = lib.types.bool; default = false; };\n"
+        "      options.services.pipewire.enable = lib.mkOption { type = lib.types.bool; default = false; };\n"
+        "      options.virtualisation.docker.enable = lib.mkOption { type = lib.types.bool; default = false; };\n"
+        "      options.environment.systemPackages = lib.mkOption { type = lib.types.listOf lib.types.package; default = []; };\n"
+        "      options.users.users = lib.mkOption { type = lib.types.attrs; default = {}; }; }\n"
+        "    ./theirs.nix ./nixync.nix ];\n"
+        "  };\n"
+        "in r.config.networking.hostName\n"
+    )
+
+    result = subprocess.run(
+        ["nix-instantiate", "--eval", "--strict", str(tmp_path / "eval.nix")],
+        capture_output=True, text=True, cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "their-box" in result.stdout, "the machine's own setting wins over mkDefault"

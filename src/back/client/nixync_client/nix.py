@@ -41,6 +41,25 @@ def _b(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _default(value: str) -> str:
+    """Wrap a value so an existing configuration.nix wins over this one.
+
+    NixOS refuses two definitions of a scalar option — even identical ones — so
+    emitting `networking.hostName` bare breaks the rebuild on any machine whose own
+    configuration already sets it. That is not hypothetical: it is what happened the
+    first time this ran on a real machine, and the failure named the whole import,
+    not the one line responsible.
+
+    `mkDefault` means Nixync's value applies only where the machine has no opinion.
+    The alternative, `mkForce`, would let the fleet override local configuration —
+    better for a fleet manager in principle, but it would also impose every default
+    in SystemSettings on settings the administrator never actually chose, and
+    switching off a machine's audio or networking by accident is a worse failure
+    than a setting quietly not taking.
+    """
+    return f"lib.mkDefault {value}"
+
+
 def _nix_string(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -67,22 +86,22 @@ def _render_settings(s: SystemSettings) -> list[str]:
     lines = []
     if s.hostname:
         # An empty hostname is a real NixOS setting and never what anyone meant.
-        lines.append(f"  networking.hostName = {_nix_string(s.hostname)};")
+        lines.append(f"  networking.hostName = {_default(_nix_string(s.hostname))};")
     lines += [
         f"  networking.nameservers = [ {nameservers} ];",
-        f"  networking.firewall.enable = {_b(s.firewall)};",
+        f"  networking.firewall.enable = {_default(_b(s.firewall))};",
         f"  networking.firewall.allowedTCPPorts = [ {ports} ];",
         "",
-        f"  time.timeZone = {_nix_string(s.timezone)};",
+        f"  time.timeZone = {_default(_nix_string(s.timezone))};",
         "",
-        f"  services.openssh.enable = {_b(s.ssh)};",
-        f"  services.openssh.settings.PasswordAuthentication = {_b(s.ssh_password_login)};",
-        f"  services.openssh.settings.PermitRootLogin = {_nix_string(s.ssh_root_login)};",
+        f"  services.openssh.enable = {_default(_b(s.ssh))};",
+        f"  services.openssh.settings.PasswordAuthentication = {_default(_b(s.ssh_password_login))};",
+        f"  services.openssh.settings.PermitRootLogin = {_default(_nix_string(s.ssh_root_login))};",
         "",
-        f"  hardware.bluetooth.enable = {_b(s.bluetooth)};",
-        f"  services.pipewire.enable = {_b(s.sound)};",
-        f"  virtualisation.docker.enable = {_b(s.docker)};",
-        f"  nixpkgs.config.allowUnfree = {_b(s.allow_unfree)};",
+        f"  hardware.bluetooth.enable = {_default(_b(s.bluetooth))};",
+        f"  services.pipewire.enable = {_default(_b(s.sound))};",
+        f"  virtualisation.docker.enable = {_default(_b(s.docker))};",
+        f"  nixpkgs.config.allowUnfree = {_default(_b(s.allow_unfree))};",
     ]
     for user in s.users:
         lines += ["", *_render_user(user)]
@@ -98,7 +117,7 @@ def render(config: MachineConfig) -> str:
     """
     packages = " ".join(_checked(p, "package") for p in config.packages)
     lines = [
-        HEADER + "{ config, pkgs, ... }:",
+        HEADER + "{ config, lib, pkgs, ... }:",
         "",
         "{",
         f"  environment.systemPackages = with pkgs; [ {packages} ];",
