@@ -25,6 +25,7 @@ requires Qt, so the agent still runs headless.
 
 from nixync_client.admin import (
     AdminClient,
+    AppRequest,
     Bundle,
     Machine,
     NixyncApiError,
@@ -43,6 +44,7 @@ from nixync_client.transport import (
 __all__ = [
     "AdminClient",
     "AgentDisconnected",
+    "AppRequest",
     "ApplyConfig",
     "Bundle",
     "LocalUser",

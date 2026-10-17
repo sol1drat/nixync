@@ -3,7 +3,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-from models import Bundle, MachineConfig, MachineOut, Preset
+from models import AppRequest, Bundle, MachineConfig, MachineOut, Preset
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS machines (
@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS machines (
 )
 """
 
+
+REQUESTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS app_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    machine_id TEXT NOT NULL,
+    app TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+)
+"""
 
 PRESETS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS presets (
@@ -99,6 +112,7 @@ def init_db(path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
     conn.execute(PRESETS_SCHEMA)
+    conn.execute(REQUESTS_SCHEMA)
     _add_missing_columns(conn)
     conn.commit()
     _seed_presets(conn)
@@ -329,3 +343,74 @@ def machines_using_preset(conn: sqlite3.Connection, name: str) -> list[str]:
     """Names of machines assigned this preset — used to refuse an orphaning delete."""
     rows = conn.execute("SELECT name FROM machines WHERE preset = ?", (name,)).fetchall()
     return [row["name"] for row in rows]
+
+
+# -- app requests ----------------------------------------------------------
+
+
+def _row_to_request(row: sqlite3.Row) -> AppRequest:
+    return AppRequest(
+        id=row["id"],
+        machine_id=row["machine_id"],
+        # Joined in so the admin's list reads as device names, not opaque ids. A
+        # request for a since-removed machine keeps its id and shows it.
+        machine_name=row["machine_name"] or row["machine_id"],
+        app=row["app"],
+        requested_by=row["requested_by"],
+        reason=row["reason"],
+        status=row["status"],
+        created_at=row["created_at"],
+        decided_at=row["decided_at"],
+    )
+
+
+_REQUEST_QUERY = """
+SELECT r.*, m.name AS machine_name
+FROM app_requests r LEFT JOIN machines m ON m.id = r.machine_id
+"""
+
+
+def create_request(
+    conn: sqlite3.Connection,
+    *,
+    machine_id: str,
+    app: str,
+    requested_by: str,
+    reason: str = "",
+) -> AppRequest:
+    cursor = conn.execute(
+        "INSERT INTO app_requests (machine_id, app, requested_by, reason, created_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (machine_id, app, requested_by, reason, _now()),
+    )
+    conn.commit()
+    return get_request(conn, cursor.lastrowid)
+
+
+def get_request(conn: sqlite3.Connection, request_id: int) -> AppRequest | None:
+    row = conn.execute(f"{_REQUEST_QUERY} WHERE r.id = ?", (request_id,)).fetchone()
+    return _row_to_request(row) if row else None
+
+
+def list_requests(
+    conn: sqlite3.Connection, machine_id: str | None = None
+) -> list[AppRequest]:
+    """Newest first: an admin reviewing a queue wants the latest asks at the top."""
+    if machine_id is None:
+        rows = conn.execute(f"{_REQUEST_QUERY} ORDER BY r.id DESC").fetchall()
+    else:
+        rows = conn.execute(
+            f"{_REQUEST_QUERY} WHERE r.machine_id = ? ORDER BY r.id DESC", (machine_id,)
+        ).fetchall()
+    return [_row_to_request(row) for row in rows]
+
+
+def set_request_status(
+    conn: sqlite3.Connection, request_id: int, status: str
+) -> AppRequest | None:
+    conn.execute(
+        "UPDATE app_requests SET status = ?, decided_at = ? WHERE id = ?",
+        (status, _now(), request_id),
+    )
+    conn.commit()
+    return get_request(conn, request_id)

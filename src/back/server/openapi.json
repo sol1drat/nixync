@@ -442,6 +442,186 @@
         }
       }
     },
+    "/requests": {
+      "get": {
+        "tags": [
+          "requests"
+        ],
+        "summary": "List Requests",
+        "description": "Every request, newest first. `?machine_id=` narrows it to one device.",
+        "operationId": "list_requests_requests_get",
+        "parameters": [
+          {
+            "name": "machine_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Machine Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppRequest"
+                  },
+                  "title": "Response List Requests Requests Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "requests"
+        ],
+        "summary": "Create Request",
+        "description": "Record an ask from a device. Deploys nothing on its own.",
+        "operationId": "create_request_requests_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppRequestCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRequest"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/requests/{request_id}/approve": {
+      "post": {
+        "tags": [
+          "requests"
+        ],
+        "summary": "Approve Request",
+        "description": "Mark it approved and deploy the app to that machine.\n\nDeciding twice is refused rather than redeployed: a second approval would be a\ndouble click, and the admin has no way to tell it did nothing.",
+        "operationId": "approve_request_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRequest"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/requests/{request_id}/decline": {
+      "post": {
+        "tags": [
+          "requests"
+        ],
+        "summary": "Decline Request",
+        "description": "Mark it declined. Nothing is deployed.",
+        "operationId": "decline_request_requests__request_id__decline_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppRequest"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/login": {
       "post": {
         "tags": [
@@ -506,6 +686,99 @@
   },
   "components": {
     "schemas": {
+      "AppRequest": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "machine_id": {
+            "type": "string",
+            "title": "Machine Id"
+          },
+          "machine_name": {
+            "type": "string",
+            "title": "Machine Name"
+          },
+          "app": {
+            "type": "string",
+            "title": "App"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "declined"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "machine_id",
+          "machine_name",
+          "app",
+          "requested_by",
+          "created_at"
+        ],
+        "title": "AppRequest",
+        "description": "Someone at a machine asking for software they cannot install themselves."
+      },
+      "AppRequestCreate": {
+        "properties": {
+          "machine_id": {
+            "type": "string",
+            "title": "Machine Id"
+          },
+          "app": {
+            "type": "string",
+            "title": "App"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "machine_id",
+          "app",
+          "requested_by"
+        ],
+        "title": "AppRequestCreate"
+      },
       "Bundle": {
         "properties": {
           "name": {

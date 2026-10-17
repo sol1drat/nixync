@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 import database
 import machines_router
 import presets_router
+import requests_router
 import ws_router
 from connection_manager import ConnectionManager
 from models import LoginRequest, LoginResponse
@@ -79,6 +80,7 @@ app = FastAPI(
 
 app.include_router(machines_router.router)
 app.include_router(presets_router.router)
+app.include_router(requests_router.router)
 app.include_router(ws_router.router)
 
 

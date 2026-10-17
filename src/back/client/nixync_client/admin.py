@@ -134,6 +134,39 @@ class Preset:
 
 
 @dataclass(frozen=True)
+class AppRequest:
+    """Someone at a machine asking for software they cannot install themselves."""
+
+    id: int
+    machine_id: str
+    machine_name: str
+    app: str
+    requested_by: str
+    created_at: str
+    reason: str = ""
+    status: str = "pending"
+    decided_at: str | None = None
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == "pending"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AppRequest":
+        return cls(
+            id=data["id"],
+            machine_id=data["machine_id"],
+            machine_name=data.get("machine_name", data["machine_id"]),
+            app=data["app"],
+            requested_by=data["requested_by"],
+            created_at=data["created_at"],
+            reason=data.get("reason", ""),
+            status=data.get("status", "pending"),
+            decided_at=data.get("decided_at"),
+        )
+
+
+@dataclass(frozen=True)
 class PackageChangeResult:
     """What happened to one machine in a package change.
 
@@ -255,6 +288,40 @@ class AdminClient:
         """Fails with 409 while machines are still assigned to it."""
         self._request("DELETE", f"/presets/{name}")
 
+    # -- app requests ------------------------------------------------------
+
+    def list_requests(self, machine_id: str | None = None) -> list[AppRequest]:
+        """Every request, newest first; one machine's when an id is given."""
+        params = {"machine_id": machine_id} if machine_id else None
+        return [
+            AppRequest.from_dict(item)
+            for item in self._request("GET", "/requests", params=params)
+        ]
+
+    def create_request(
+        self, machine_id: str, app: str, requested_by: str, reason: str = ""
+    ) -> AppRequest:
+        """Ask for an app. Deploys nothing until an admin approves it."""
+        return AppRequest.from_dict(
+            self._request(
+                "POST",
+                "/requests",
+                json={
+                    "machine_id": machine_id,
+                    "app": app,
+                    "requested_by": requested_by,
+                    "reason": reason,
+                },
+            )
+        )
+
+    def approve_request(self, request_id: int) -> AppRequest:
+        """Approve and deploy. Raises 409 if it was already decided."""
+        return AppRequest.from_dict(self._request("POST", f"/requests/{request_id}/approve"))
+
+    def decline_request(self, request_id: int) -> AppRequest:
+        return AppRequest.from_dict(self._request("POST", f"/requests/{request_id}/decline"))
+
     # -- package changes ---------------------------------------------------
 
     def change_packages(
@@ -302,10 +369,14 @@ class AdminClient:
 
     # -- plumbing ----------------------------------------------------------
 
-    def _request(self, method: str, path: str, json: dict | None = None):
+    def _request(self, method: str, path: str, json: dict | None = None, params: dict | None = None):
         try:
             response = self.session.request(
-                method, f"{self.base_url}{path}", json=json, timeout=self.timeout
+                method,
+                f"{self.base_url}{path}",
+                json=json,
+                params=params,
+                timeout=self.timeout,
             )
         except requests.RequestException as error:
             raise NixyncApiError(f"could not reach the Nixync server: {error}") from error

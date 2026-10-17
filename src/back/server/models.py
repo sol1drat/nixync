@@ -155,5 +155,26 @@ class PackageMutationResponse(BaseModel):
     results: list[PackageMutationResultItem]
 
 
+class AppRequest(BaseModel):
+    """Someone at a machine asking for software they cannot install themselves."""
+
+    id: int
+    machine_id: str
+    machine_name: str
+    app: str
+    requested_by: str
+    reason: str = ""
+    status: Literal["pending", "approved", "declined"] = "pending"
+    created_at: str
+    decided_at: str | None = None
+
+
+class AppRequestCreate(BaseModel):
+    machine_id: str
+    app: str
+    requested_by: str
+    reason: str = ""
+
+
 class SettingsUpdate(BaseModel):
     settings: SystemSettings
