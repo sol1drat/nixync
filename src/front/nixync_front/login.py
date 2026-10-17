@@ -3,7 +3,7 @@ from dataclasses import replace
 from PySide6.QtCore import QSettings, QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QToolButton, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
 from nixync_front import __version__, style
@@ -23,7 +23,10 @@ def field_label(text: str) -> QLabel:
 class LoginWindow(QWidget):
     """Sign-in screen shown before the main window."""
 
-    signed_in = Signal(object, str, str)  # Config (with the chosen server), username, device ("" = admin)
+    signed_in = Signal(object, str, str)  # Config (with the chosen server), username, device
+    # `device` is always "" now: the sign-in screen no longer offers client mode, so the
+    # app always opens the admin panel. ClientWindow still takes a device name if the
+    # per-device app is reached another way.
 
     def __init__(self, config: Config):
         super().__init__()
@@ -97,26 +100,6 @@ class LoginWindow(QWidget):
         body.addWidget(self.password)
         body.addSpacing(10)
 
-        self.as_client = QCheckBox("Log in as client")
-        self.as_client.setToolTip("Use the app for one device: request apps and change its settings")
-        self.as_client.setChecked(self.settings.value("login/as_client", False, type=bool))
-        body.addWidget(self.as_client)
-        self.device_label = field_label("Device")
-        self.device = QComboBox()
-        # TODO: the client app runs on the device, so it should use its own hostname instead.
-        try:
-            devices = [m.name for m in NixyncClient(self.config).list_machines()]
-        except ApiError:
-            devices = []
-        self.device.addItems(devices)
-        saved_device = self.settings.value("login/device", "", type=str)
-        if saved_device:
-            self.device.setCurrentText(saved_device)
-        body.addWidget(self.device_label)
-        body.addWidget(self.device)
-        self.as_client.toggled.connect(self._show_device)
-        self._show_device(self.as_client.isChecked())
-        body.addSpacing(4)
 
         self.remember = QCheckBox("Remember server and username")
         self.remember.setChecked(bool(saved_user))
@@ -170,10 +153,6 @@ class LoginWindow(QWidget):
         style.apply(QApplication.instance(), theme)
         self._apply_theme_icons()
 
-    def _show_device(self, on: bool):
-        self.device_label.setVisible(on)
-        self.device.setVisible(on)
-
     def _toggle_password(self):
         hidden = self.password.echoMode() == QLineEdit.EchoMode.Password
         self.password.setEchoMode(QLineEdit.EchoMode.Normal if hidden else QLineEdit.EchoMode.Password)
@@ -204,14 +183,11 @@ class LoginWindow(QWidget):
             self._show_error(str(e))
             return
 
-        device = self.device.currentText() if self.as_client.isChecked() else ""
         if self.remember.isChecked():
             self.settings.setValue("login/server", server)
             self.settings.setValue("login/username", username)
-            self.settings.setValue("login/as_client", self.as_client.isChecked())
-            self.settings.setValue("login/device", device)
         else:
             for key in ("server", "username", "as_client", "device"):
                 self.settings.remove(f"login/{key}")
         self.password.clear()
-        self.signed_in.emit(config, user["username"], device)
+        self.signed_in.emit(config, user["username"], "")

@@ -124,28 +124,31 @@ def test_the_agent_id_is_available_so_the_operator_can_provision_the_device(clie
     assert client.machine_id(machine.name)
 
 
-def test_add_dialog_labels_are_shown_for_this_session(client):
-    """Preset and address are not on the server yet, but the operator just typed them."""
+def test_add_dialog_labels_are_stored_with_the_machine(client):
+    """What the operator typed in the add dialog comes back on the machine."""
     machine = client.add_machine(
-        "front-labeled", preset="Developer tools", address="10.0.4.15"
+        "front-labeled", preset="Workstation", address="10.0.4.15"
     )
 
-    assert machine.preset == "Developer tools"
+    assert machine.preset == "Workstation"
     assert machine.address == "10.0.4.15"
     listed = next(m for m in client.list_machines() if m.name == "front-labeled")
-    assert listed.preset == "Developer tools"
+    assert listed.preset == "Workstation"
     assert listed.address == "10.0.4.15"
 
 
-def test_add_dialog_labels_do_not_survive_a_new_client(client, live_server):
-    """They are presentation-only until the server has a place for them."""
-    client.add_machine("front-ephemeral", preset="Developer tools", address="10.0.0.1")
+def test_add_dialog_labels_survive_a_restart_of_the_app(client, live_server):
+    """Preset, group and address live on the server now, not in this process."""
+    client.add_machine(
+        "front-persisted", preset="Workstation", group="Lab A", address="10.0.0.1"
+    )
 
     fresh = NixyncClient(Config(server_url=live_server, request_timeout=5))
-    machine = fresh.get_machine("front-ephemeral")
+    machine = fresh.get_machine("front-persisted")
 
-    assert machine.preset == ""
-    assert machine.address == ""
+    assert machine.preset == "Workstation"
+    assert machine.group == "Lab A"
+    assert machine.address == "10.0.0.1"
 
 
 # -- live telemetry ---------------------------------------------------------

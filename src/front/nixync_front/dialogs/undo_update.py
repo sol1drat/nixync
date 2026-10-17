@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QRadioButton, QVBoxLayout
 
+from nixync_front.widgets import cancel_box
+
 
 class UndoUpdateDialog(QDialog):
     def __init__(self, host: str, parent=None):
@@ -27,7 +29,7 @@ class UndoUpdateDialog(QDialog):
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        buttons = cancel_box()
         undo = buttons.addButton("Undo update", QDialogButtonBox.ButtonRole.AcceptRole)
         undo.setProperty("primary", True)
         buttons.accepted.connect(self.accept)

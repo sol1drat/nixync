@@ -313,7 +313,12 @@ class MainWindow(QMainWindow):
         self.machines.clear_selected()
 
     def open_add_machine(self):
-        dialog = AddMachineDialog([r.name for r in self.client.list_presets()], self)
+        try:
+            presets = [r.name for r in self.client.list_presets()]
+        except ApiError as e:
+            self.statusBar().showMessage(f"Couldn't load presets: {e}", 10000)
+            return
+        dialog = AddMachineDialog(presets, self)
         if not dialog.exec():
             return
 

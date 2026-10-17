@@ -1,22 +1,24 @@
 """The desktop app's view of the Nixync server.
 
-Machines, apps and device settings are real: this delegates to `nixync_client`, the
-library that owns the wire protocol, rather than building requests by hand. Presets,
-groups, app requests and the updates page still come from `sample_data` — the server
-has no data model for them yet, and each is marked below.
+Machines, apps, device settings, presets and machine labels are real: this delegates
+to `nixync_client`, the library that owns the wire protocol, rather than building
+requests by hand. App requests and the updates page still come from `sample_data` —
+the server has no data model for them yet, and both are marked below.
 
 The UI reads `sample_data.Machine`, so the server's richer record is mapped onto that
-shape instead of changing a view model that a dozen files depend on. Fields the server
-has no concept of keep their sample defaults rather than being invented.
+shape instead of changing a view model that a dozen files depend on.
 
 Every call here is blocking; the pages already run them on worker threads.
 """
 
-from dataclasses import asdict
 from datetime import datetime
 
 from nixync_client import AdminClient, NixyncApiError
+from nixync_client import Bundle as ServerBundle
+from nixync_client import LocalUser as ServerUser
 from nixync_client import Machine as ServerMachine
+from nixync_client import Preset as ServerPreset
+from nixync_client import SystemSettings as ServerSettings
 
 from nixync_front import nixos_search, sample_data
 from nixync_front.config import Config
@@ -54,39 +56,61 @@ def _parse_time(value: str | None) -> datetime | None:
         return None
 
 
-def _settings_from(stored: dict, hostname: str) -> sample_data.SystemSettings:
-    """Rebuild SystemSettings from the free-form dict the server stores.
+def _settings_from(
+    stored: ServerSettings | dict | None, hostname: str
+) -> sample_data.SystemSettings:
+    """Map the server's settings onto the dataclass the settings panel edits.
 
-    Unknown keys are dropped rather than raising: a newer client may have written
-    settings this build does not know about, and losing one toggle beats a crash.
+    None means nobody has configured this machine yet, so it gets sensible defaults
+    named after the machine rather than a blank hostname. A plain dict is accepted
+    too, so a raw payload never crashes the fleet view.
     """
-    known = sample_data.SystemSettings.__dataclass_fields__
-    values = {k: v for k, v in (stored or {}).items() if k in known and k != "users"}
-    values.setdefault("hostname", hostname)
-    settings = sample_data.SystemSettings(**values)
+    if isinstance(stored, dict):
+        stored = ServerSettings.from_dict(stored)
+    if stored is None:
+        return sample_data.SystemSettings(hostname=hostname)
+    shared = [f for f in sample_data.SystemSettings.__dataclass_fields__ if f != "users"]
+    settings = sample_data.SystemSettings(
+        **{f: getattr(stored, f) for f in shared if hasattr(stored, f)}
+    )
+    settings.hostname = stored.hostname or hostname
     settings.users = [
-        sample_data.LocalUser(**{k: v for k, v in user.items()
-                                 if k in sample_data.LocalUser.__dataclass_fields__})
-        for user in (stored or {}).get("users", [])
+        sample_data.LocalUser(name=u.name, full_name=u.full_name, admin=u.admin)
+        for u in stored.users
     ]
     return settings
 
 
-def _to_view_model(
-    machine: ServerMachine,
-    *,
-    preset: str = "",
-    group: str = "",
-    address: str = "",
-) -> sample_data.Machine:
+def _settings_to_server(settings: sample_data.SystemSettings) -> ServerSettings:
+    """The reverse, dropping anything the server has no field for."""
+    shared = [f for f in ServerSettings.__dataclass_fields__ if f != "users"]
+    payload = ServerSettings(
+        **{f: getattr(settings, f) for f in shared if hasattr(settings, f)}
+    )
+    payload.users = [
+        ServerUser(name=u.name, full_name=u.full_name, admin=u.admin)
+        for u in settings.users
+    ]
+    return payload
+
+
+def _preset_from(preset: ServerPreset) -> sample_data.Preset:
+    return sample_data.Preset(
+        name=preset.name,
+        bundles=[
+            sample_data.Bundle(b.name, b.description, b.enabled) for b in preset.bundles
+        ],
+        extra_apps=list(preset.extra_apps),
+    )
+
+
+def _to_view_model(machine: ServerMachine) -> sample_data.Machine:
     """Map the server's machine onto the record the UI renders."""
     return sample_data.Machine(
         name=machine.name,
-        # Preset/group/address have no server model yet; the add-device dialog can
-        # still supply them for this session so the fleet view is not blank.
-        preset=preset,
-        group=group,
-        address=address,
+        preset=machine.preset,
+        group=machine.group,
+        address=machine.address,
         health=_health_of(machine),
         note=machine.last_apply_message or "",
         cpu_percent=machine.cpu_percent,
@@ -108,9 +132,6 @@ class NixyncClient:
         # The UI names machines; the server identifies them by id. Filled on every
         # list_machines() so later calls can translate without a second round trip.
         self._ids: dict[str, str] = {}
-        # Presentation-only fields collected by the add-device dialog. Lost on
-        # restart — the server cannot store them yet (see src/front/SPEC.md).
-        self._labels: dict[str, dict[str, str]] = {}
 
     # -- plumbing ----------------------------------------------------------
 
@@ -157,11 +178,11 @@ class NixyncClient:
         for machine in machines:
             counts[machine.name] = counts.get(machine.name, 0) + 1
         self._ids = {m.name: m.id for m in machines if counts[m.name] == 1}
-        return [self._view_model(m) for m in machines]
+        return [_to_view_model(m) for m in machines]
 
     def get_machine(self, name: str) -> sample_data.Machine:
         try:
-            return self._view_model(self._admin.get_machine(self._machine_id(name)))
+            return _to_view_model(self._admin.get_machine(self._machine_id(name)))
         except NixyncApiError as e:
             raise ApiError(str(e)) from e
 
@@ -173,24 +194,15 @@ class NixyncClient:
         group: str = "",
         address: str = "",
     ) -> sample_data.Machine:
-        """Register a machine. The returned id is what its agent connects with.
-
-        `preset`, `group` and `address` are kept for this session only — the server
-        has no place for them yet, but the add dialog collects them and the UI
-        should still show what the operator chose.
-        """
+        """Register a machine. The returned id is what its agent connects with."""
         try:
-            machine = self._admin.register_machine(name)
+            machine = self._admin.register_machine(
+                name, preset=preset, group=group, address=address
+            )
         except NixyncApiError as e:
             raise ApiError(str(e)) from e
         self._ids[machine.name] = machine.id
-        if preset or group or address:
-            self._labels[machine.name] = {
-                "preset": preset,
-                "group": group,
-                "address": address,
-            }
-        return self._view_model(machine)
+        return _to_view_model(machine)
 
     def remove_machine(self, name: str) -> None:
         try:
@@ -198,16 +210,6 @@ class NixyncClient:
         except NixyncApiError as e:
             raise ApiError(str(e)) from e
         self._ids.pop(name, None)
-        self._labels.pop(name, None)
-
-    def _view_model(self, machine: ServerMachine) -> sample_data.Machine:
-        labels = self._labels.get(machine.name, {})
-        return _to_view_model(
-            machine,
-            preset=labels.get("preset", ""),
-            group=labels.get("group", ""),
-            address=labels.get("address", ""),
-        )
 
     def machine_id(self, name: str) -> str:
         """The id to hand to that machine's agent."""
@@ -284,19 +286,64 @@ class NixyncClient:
         and must never reach the Nix configuration.
         """
         try:
-            self._admin.set_settings(self._machine_id(machine), asdict(settings))
+            self._admin.set_settings(self._machine_id(machine), _settings_to_server(settings))
         except NixyncApiError as e:
             raise ApiError(str(e)) from e
 
-    # -- not backed by the server yet --------------------------------------
-    # Presets, groups, app requests and the updates page have no server data model.
-    # These stay on sample data until they do; see src/front/SPEC.md.
+    # -- presets -----------------------------------------------------------
 
     def list_presets(self) -> list[sample_data.Preset]:
-        return list(sample_data.PRESETS)
+        try:
+            return [_preset_from(p) for p in self._admin.list_presets()]
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
 
     def get_preset(self, name: str) -> sample_data.Preset | None:
-        return next((p for p in self.list_presets() if p.name == name), None)
+        if not name:
+            return None
+        try:
+            preset = self._admin.get_preset(name)
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
+        return _preset_from(preset) if preset else None
+
+    def save_preset(self, preset: sample_data.Preset) -> sample_data.Preset:
+        """Create or replace a preset by name."""
+        try:
+            saved = self._admin.save_preset(
+                ServerPreset(
+                    name=preset.name,
+                    bundles=[
+                        ServerBundle(b.name, b.description, b.enabled)
+                        for b in preset.bundles
+                    ],
+                    extra_apps=list(preset.extra_apps),
+                )
+            )
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
+        return _preset_from(saved)
+
+    def set_machine_labels(
+        self,
+        name: str,
+        *,
+        preset: str | None = None,
+        group: str | None = None,
+        address: str | None = None,
+    ) -> sample_data.Machine:
+        """Change a device's preset, group or address. Deploys nothing."""
+        try:
+            machine = self._admin.update_machine(
+                self._machine_id(name), preset=preset, group=group, address=address
+            )
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
+        return _to_view_model(machine)
+
+    # -- not backed by the server yet --------------------------------------
+    # App requests and the updates page have no server data model. These stay on
+    # sample data until they do; see src/front/SPEC.md.
 
     def list_requests(self) -> list[sample_data.AppRequest]:
         return sorted(sample_data.REQUESTS, key=lambda r: r.when, reverse=True)

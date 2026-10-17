@@ -168,6 +168,11 @@ QListWidget {{ background: {c["surface"]}; border: 1px solid {c["border"]}; colo
 QListWidget::item:hover {{ background: {c["hover"]}; }}
 QLabel#PageTitle {{ font-size: 24px; font-weight: 600; }}
 QLabel#Muted {{ color: {c["muted"]}; }}
+/* Qt's native style puts a themed icon on standard buttons — a cross on Cancel, a
+   tick on OK. They clash with the flat text buttons everywhere else in the app, so
+   turn them off for every dialog and message box at once. */
+QDialogButtonBox {{ dialogbuttonbox-buttons-have-icons: 0; }}
+QMessageBox {{ messagebox-text-interaction-flags: 5; }}
 QPushButton {{
     min-height: 36px; padding: 0 16px; border: 1px solid {c["border_strong"]};
     border-radius: 6px; background: {c["surface"]}; color: {c["text"]};

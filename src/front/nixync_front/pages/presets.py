@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 )
 
 from nixync_front import style
-from nixync_front.api import NixyncClient
+from nixync_front.api import ApiError, NixyncClient
 from nixync_front.app_picker import AppPicker
 from nixync_front.sample_data import Preset
 from nixync_front.widgets import Panel, clear_layout, page_header, primary_button
@@ -16,7 +16,12 @@ class PresetsPage(QWidget):
     def __init__(self, client: NixyncClient):
         super().__init__()
         self.client = client
-        self.presets = client.list_presets()
+        try:
+            self.presets = client.list_presets()
+        except ApiError:
+            # Presets live on the server now, so this is a network call. An
+            # unreachable server must not stop the app from opening.
+            self.presets = []
         self.machines = client.list_machines()
 
         layout = QHBoxLayout(self)

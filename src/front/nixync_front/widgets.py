@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from PySide6.QtCore import QByteArray, QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractButton, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLayout, QLayoutItem, QListWidget, QPushButton,
+    QAbstractButton, QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QLayout, QLayoutItem, QListWidget, QPushButton,
     QVBoxLayout, QWidget,
 )
 
@@ -184,6 +184,25 @@ def primary_button(text: str) -> QPushButton:
     button = QPushButton(text)
     button.setProperty("primary", True)
     return button
+
+
+def strip_icons(widget) -> None:
+    """Remove the themed icons Qt puts on standard dialog buttons.
+
+    The native style decorates Cancel with a cross and OK with a tick. Nothing else
+    in this app has an icon inside a button, so they look out of place — Cancel
+    should just read "Cancel".
+    """
+    for button in widget.findChildren(QPushButton):
+        if not button.icon().isNull():
+            button.setIcon(QIcon())
+
+
+def cancel_box(*, parent=None) -> QDialogButtonBox:
+    """A button box whose Cancel is plain text; add accept buttons to the result."""
+    box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, parent)
+    strip_icons(box)
+    return box
 
 
 def page_header(title: str, subtitle: str = "") -> QWidget:

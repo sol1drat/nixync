@@ -100,8 +100,13 @@ class MachinesPage(QWidget):
         top.setSpacing(16)
         top.addWidget(page_header("Devices"))
         self.attention = self._attention_count()
+        self._update_attention()
         top.addWidget(self.attention, 0, Qt.AlignmentFlag.AlignVCenter)
         top.addStretch()
+        reload_button = QPushButton("Refresh")
+        reload_button.setToolTip("Re-read the fleet from the server")
+        reload_button.clicked.connect(self.refresh)
+        top.addWidget(reload_button)
         add = QPushButton("Add device")
         add.clicked.connect(self.add_machine_requested)
         change = primary_button("Change what's installed")
@@ -198,13 +203,21 @@ class MachinesPage(QWidget):
         return combo
 
     def _attention_count(self) -> QPushButton:
-        count = len([m for m in self.machines if m.health is not Health.OK])
-        button = QPushButton(f"{count} with issues")
+        button = QPushButton()
         button.setObjectName("AttentionCount")
         button.setToolTip("Show only devices with problems")
-        button.setVisible(bool(count))
         button.clicked.connect(lambda: self.status_filter.setCurrentText(WITH_ISSUES))
         return button
+
+    def _update_attention(self):
+        """Keep the badge in step with the fleet it is counting.
+
+        Built once but never updated, it would keep showing the count from app start —
+        conspicuously wrong sitting next to a Refresh button.
+        """
+        count = len([m for m in self.machines if m.health is not Health.OK])
+        self.attention.setText(f"{count} with issues")
+        self.attention.setVisible(bool(count))
 
     @staticmethod
     def _status_matches(m: Machine, status: str | None) -> bool:
@@ -245,6 +258,7 @@ class MachinesPage(QWidget):
 
     def refresh(self):
         self._reload()
+        self._update_attention()
         self.shown = self._visible()
         self.table.clearSpans()
         self.table.setRowCount(0)

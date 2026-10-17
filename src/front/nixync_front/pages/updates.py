@@ -95,6 +95,14 @@ class LogDialog(QDialog):
         layout.addWidget(buttons)
 
 
+def _safe_preset(client, name):
+    """Presets come from the server now, so looking one up can fail."""
+    try:
+        return client.get_preset(name)
+    except ApiError:
+        return None
+
+
 class UpdatesPage(QWidget):
     """Devices that aren't up to date, plus recent successful builds and errors across all devices."""
 
@@ -272,7 +280,7 @@ class UpdatesPage(QWidget):
             t.setCellWidget(row, 2, centered(status_text(style.PROBLEM, e.title)))
             details = QPushButton("Details")
             details.setProperty("link", True)
-            details.clicked.connect(lambda _=False, m=m, e=e: LogDialog(m, e, self.client.get_preset(m.preset), self).exec())
+            details.clicked.connect(lambda _=False, m=m, e=e: LogDialog(m, e, self._preset(m.preset), self).exec())
             t.setCellWidget(row, 3, centered(details, Qt.AlignmentFlag.AlignRight))
         if not errors:
             empty_row(t, "No errors.")

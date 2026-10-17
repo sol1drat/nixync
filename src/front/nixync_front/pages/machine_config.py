@@ -74,6 +74,35 @@ class MachineConfigPage(QWidget):
         self.machine = self.client.get_machine(name)
         self._build()
 
+    def refresh(self):
+        """Re-read this device from the server and redraw.
+
+        Telemetry, deployment status and the installed app list all change while the
+        page is open, so this refetches rather than just repainting what it had.
+        """
+        if self.machine is None:
+            return
+        try:
+            self.machine = self.client.get_machine(self.machine.name)
+        except ApiError as e:
+            self.message.emit(f"Couldn't refresh: {e}")
+            return
+        self._build()
+
+    def _preset(self):
+        """This device's preset, or None if it has none or the server is unreachable."""
+        try:
+            return self.client.get_preset(self.machine.preset)
+        except ApiError:
+            return None
+
+    def _agent_id(self) -> str:
+        """The id this device's agent connects with — unknown if the server is down."""
+        try:
+            return self.client.machine_id(self.machine.name)
+        except ApiError:
+            return "Unavailable"
+
     def _build(self):
         clear_layout(self.layout_)
         m = self.machine
@@ -85,9 +114,14 @@ class MachineConfigPage(QWidget):
         remove.setProperty("link", True)
         remove.setToolTip("Unregister this device from the fleet")
         remove.clicked.connect(lambda: self.remove_requested.emit(m.name))
+        refresh = QPushButton("Refresh")
+        refresh.setProperty("link", True)
+        refresh.setToolTip("Re-read this device from the server")
+        refresh.clicked.connect(self.refresh)
         top = QHBoxLayout()
         top.addWidget(back)
         top.addStretch()
+        top.addWidget(refresh)
         top.addWidget(remove)
         self.layout_.addLayout(top)
 
@@ -126,7 +160,10 @@ class MachineConfigPage(QWidget):
                             if latest else "None yet"), 0, 2)
         grid.addWidget(fact("Address", m.address or "Not set"), 1, 0)
         grid.addWidget(fact("NixOS", m.nixos_version), 1, 1)
-        grid.addWidget(fact("Preset", m.preset), 1, 2)
+        grid.addWidget(fact("Preset", m.preset or "None"), 1, 2)
+        # The operator has to type this into the agent on the device itself, so it is
+        # shown in full and stays selectable rather than being truncated.
+        grid.addWidget(fact("Agent ID", self._agent_id()), 2, 0, 1, 3)
         row = QHBoxLayout()
         row.setSpacing(24)
         row.addLayout(grid, 1)
@@ -185,13 +222,13 @@ class MachineConfigPage(QWidget):
         self.message.emit(f"Applying system settings to {self.machine.name}…")
 
     def _ask_ai(self, error):
-        AskAIDialog(self.machine, error, self.client.get_preset(self.machine.preset), self).exec()
+        AskAIDialog(self.machine, error, self._preset(), self).exec()
 
     def _apps_panel(self) -> Panel:
         panel = Panel()
         panel.body.addWidget(section_title("Apps"))
 
-        preset = self.client.get_preset(self.machine.preset)
+        preset = self._preset()
         from_preset = preset.extra_apps if preset else []
         count = len(from_preset)
         line = QHBoxLayout()

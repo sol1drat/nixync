@@ -24,7 +24,7 @@ from nixync_front.sample_data import APP_CATALOG, RequestStatus
 from nixync_front.settings_panel import SettingsPanel
 from nixync_front.users_panel import UsersPanel
 from nixync_front.widgets import (
-    FlowLayout, Panel, RingGauge, ago, clear_layout, page_header, primary_button, search_icon, status_text,
+    FlowLayout, Panel, RingGauge, ago, clear_layout, page_header, primary_button, search_icon, status_text, cancel_box,
     themed_icon,
 )
 
@@ -89,7 +89,7 @@ class RequestDialog(QDialog):
         self.reason.setPlaceholderText("e.g. For the 3D modelling assignment due Friday")
         self.reason.setFixedHeight(84)
         layout.addWidget(self.reason)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        buttons = cancel_box()
         send = buttons.addButton("Send request", QDialogButtonBox.ButtonRole.AcceptRole)
         send.setProperty("primary", True)
         buttons.accepted.connect(self.accept)

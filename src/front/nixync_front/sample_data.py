@@ -247,17 +247,12 @@ PRESETS = [
     ], ["nginx"]),
 ]
 
-_PENDING, _APPROVED, _DECLINED = RequestStatus.PENDING, RequestStatus.APPROVED, RequestStatus.DECLINED
 
-REQUESTS = [
-    AppRequest(1, "lab-01", "blender", "student14", _ago(minutes=12), "For the 3D modelling assignment due Friday"),
-    AppRequest(2, "lab-01", "inkscape", "student14", _ago(minutes=9), "Need to make vector diagrams for my report"),
-    AppRequest(3, "lab-03", "vlc", "student02", _ago(hours=3), "Lecture recordings won't play in the browser"),
-    AppRequest(4, "build-01", "postgresql", "ci-bot", _ago(hours=5), "Integration tests need a local database"),
-    AppRequest(5, "lab-02", "obs-studio", "student07", _ago(days=1, hours=2), "Recording a presentation"),
-    AppRequest(6, "lab-02", "gimp", "student07", _ago(days=2), "Editing photos for the poster", _APPROVED),
-    AppRequest(7, "web-01", "wireshark", "intern", _ago(days=3), "", _DECLINED),
-]
+# Empty by design: app requests are not a server feature yet, and seeding the page
+# with made-up requests against machines that do not exist made the UI look broken
+# the moment it was pointed at a real fleet. Requests created in the running app are
+# appended here and live only for that session.
+REQUESTS: list[AppRequest] = []
 
 _D, _F, _P = Step.DONE, Step.FAILED, Step.PENDING
 

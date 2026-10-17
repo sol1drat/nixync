@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout
 
+from nixync_front.widgets import cancel_box
+
 
 class AddMachineDialog(QDialog):
     def __init__(self, presets: list[str], parent=None):
@@ -26,7 +28,7 @@ class AddMachineDialog(QDialog):
         form.addRow("Preset", self.preset)
         layout.addLayout(form)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        buttons = cancel_box()
         self.add = buttons.addButton("Add device", QDialogButtonBox.ButtonRole.AcceptRole)
         self.add.setProperty("primary", True)
         self.add.setEnabled(False)

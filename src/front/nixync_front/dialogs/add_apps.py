@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 from nixync_front.api import NixyncClient
 from nixync_front.app_picker import AppPicker
 from nixync_front.sample_data import Health
+from nixync_front.widgets import cancel_box
 
 
 class AddAppsDialog(QDialog):
@@ -43,7 +44,7 @@ class AddAppsDialog(QDialog):
         layout.addWidget(self.picker)
         layout.addStretch()
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        buttons = cancel_box()
         self.add = buttons.addButton(f"Add to {count} device{plural}", QDialogButtonBox.ButtonRole.AcceptRole)
         self.add.setProperty("primary", True)
         self.add.setEnabled(False)
