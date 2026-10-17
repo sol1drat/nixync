@@ -5,3 +5,5 @@ __pycache__/
 .env
 .direnv/
 src/front/config.toml
+*.db
+.pytest_cache/
