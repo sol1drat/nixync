@@ -1,6 +1,6 @@
 import requests
 
-HOST = "192.168.1.50"  # Replace with the managed host's IP
+HOST = "localhost"  # Replace with the managed host's IP
 URL = f"http://{HOST}:8000/status"
 
 
