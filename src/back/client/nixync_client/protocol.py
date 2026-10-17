@@ -8,6 +8,62 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class LocalUser:
+    """A user account on the machine. Never carries a password — see the server model."""
+
+    name: str
+    full_name: str = ""
+    admin: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "LocalUser":
+        return cls(
+            name=data.get("name", ""),
+            full_name=data.get("full_name", ""),
+            admin=bool(data.get("admin", False)),
+        )
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "full_name": self.full_name, "admin": self.admin}
+
+
+@dataclass
+class SystemSettings:
+    """Machine-level NixOS options the desktop app edits and an agent applies."""
+
+    hostname: str = ""
+    timezone: str = "UTC"
+    nameservers: list[str] = field(default_factory=list)
+    firewall: bool = True
+    open_tcp_ports: list[int] = field(default_factory=lambda: [22])
+    ssh: bool = True
+    ssh_password_login: bool = False
+    ssh_root_login: str = "no"
+    bluetooth: bool = False
+    sound: bool = True
+    docker: bool = False
+    allow_unfree: bool = True
+    users: list[LocalUser] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SystemSettings":
+        known = {f for f in cls.__dataclass_fields__ if f != "users"}
+        # Unknown keys are dropped: a newer server may send a setting this build does
+        # not understand, and losing one toggle beats refusing to read the machine.
+        values = {k: v for k, v in (data or {}).items() if k in known}
+        settings = cls(**values)
+        settings.users = [LocalUser.from_dict(u) for u in (data or {}).get("users", [])]
+        return settings
+
+    def to_dict(self) -> dict:
+        data = {
+            f: getattr(self, f) for f in self.__dataclass_fields__ if f != "users"
+        }
+        data["users"] = [u.to_dict() for u in self.users]
+        return data
+
+
+@dataclass
 class MachineConfig:
     """A machine's declared configuration, as the server stores and pushes it."""
 
@@ -16,8 +72,9 @@ class MachineConfig:
     groups: list[str] = field(default_factory=list)
     services: list[str] = field(default_factory=list)
     # Hostname, timezone, firewall, SSH, local users — NixOS configuration too, so it
-    # rides in the same declarative payload. Free-form: the desktop app owns the schema.
-    settings: dict = field(default_factory=dict)
+    # rides in the same declarative payload. None means nobody has configured this
+    # machine yet, which is not the same as configuring it to the defaults.
+    settings: SystemSettings | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "MachineConfig":
@@ -27,7 +84,11 @@ class MachineConfig:
             users=list(data.get("users") or []),
             groups=list(data.get("groups") or []),
             services=list(data.get("services") or []),
-            settings=dict(data.get("settings") or {}),
+            settings=(
+                SystemSettings.from_dict(data["settings"])
+                if data.get("settings") is not None
+                else None
+            ),
         )
 
     def to_dict(self) -> dict:
@@ -36,7 +97,7 @@ class MachineConfig:
             "users": list(self.users),
             "groups": list(self.groups),
             "services": list(self.services),
-            "settings": dict(self.settings),
+            "settings": self.settings.to_dict() if self.settings else None,
         }
 
 

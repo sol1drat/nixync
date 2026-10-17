@@ -3,7 +3,7 @@
 import pytest
 
 from nixync_client.admin import AdminClient, Machine, NixyncApiError
-from nixync_client.protocol import MachineConfig
+from nixync_client.protocol import MachineConfig, SystemSettings
 
 
 @pytest.fixture
@@ -245,23 +245,22 @@ def test_signing_in_against_an_unreachable_server_is_distinguishable_from_a_bad_
 def test_setting_a_machines_system_settings_persists_them(admin):
     machine = admin.register_machine("settings-box")
 
-    admin.set_settings(machine.id, {"hostname": "lab-05", "firewall": True})
+    admin.set_settings(machine.id, SystemSettings(hostname="lab-05", firewall=True))
 
-    assert admin.get_machine(machine.id).config.settings == {
-        "hostname": "lab-05",
-        "firewall": True,
-    }
+    stored = admin.get_machine(machine.id).config.settings
+    assert stored.hostname == "lab-05"
+    assert stored.firewall is True
 
 
 def test_saving_settings_leaves_the_package_list_alone(admin):
     machine = admin.register_machine("settings-and-apps")
     admin.add_packages(["git"], machine_ids=[machine.id])
 
-    admin.set_settings(machine.id, {"hostname": "lab-06"})
+    admin.set_settings(machine.id, SystemSettings(hostname="lab-06"))
 
     fetched = admin.get_machine(machine.id)
     assert fetched.config.packages == ["git"]
-    assert fetched.config.settings == {"hostname": "lab-06"}
+    assert fetched.config.settings.hostname == "lab-06"
 
 
 def test_saving_settings_queues_a_deployment_so_the_machine_picks_them_up(admin):

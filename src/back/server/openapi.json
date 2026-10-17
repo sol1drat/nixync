@@ -166,6 +166,57 @@
       }
     },
     "/machines/{machine_id}": {
+      "patch": {
+        "tags": [
+          "machines"
+        ],
+        "summary": "Update Machine",
+        "description": "Edit a machine's name, preset, group or address.\n\nLabels only \u2014 nothing here changes what is deployed, so re-labelling a machine\nnever triggers a rebuild. Assigning a preset that does not exist is rejected\nrather than stored, since a dangling label is just a typo nobody notices.",
+        "operationId": "update_machine_machines__machine_id__patch",
+        "parameters": [
+          {
+            "name": "machine_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Machine Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MachineUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "machines"
@@ -220,6 +271,157 @@
             "schema": {
               "type": "string",
               "title": "Machine Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/presets": {
+      "get": {
+        "tags": [
+          "presets"
+        ],
+        "summary": "List Presets",
+        "operationId": "list_presets_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Preset"
+                  },
+                  "type": "array",
+                  "title": "Response List Presets Presets Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/presets/{name}": {
+      "get": {
+        "tags": [
+          "presets"
+        ],
+        "summary": "Get Preset",
+        "operationId": "get_preset_presets__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "presets"
+        ],
+        "summary": "Save Preset",
+        "description": "Create or replace a preset.\n\nThe name in the path wins over any name in the body, so a rename cannot happen\nby accident \u2014 that would silently orphan every machine pointing at the old one.",
+        "operationId": "save_preset_presets__name__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Preset"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "presets"
+        ],
+        "summary": "Delete Preset",
+        "operationId": "delete_preset_presets__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
             }
           }
         ],
@@ -304,6 +506,30 @@
   },
   "components": {
     "schemas": {
+      "Bundle": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Bundle",
+        "description": "A named group of configuration a preset can switch on or off."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -316,6 +542,30 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LocalUser": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name",
+            "default": ""
+          },
+          "admin": {
+            "type": "boolean",
+            "title": "Admin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "LocalUser",
+        "description": "A user account on a managed machine.\n\nNo password field, deliberately: passwords are set on the device and hashed\nthere, and must never reach a Nix configuration or this server's database."
       },
       "LoginRequest": {
         "properties": {
@@ -383,10 +633,14 @@
             "default": []
           },
           "settings": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Settings",
-            "default": {}
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -397,6 +651,21 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "preset": {
+            "type": "string",
+            "title": "Preset",
+            "default": ""
+          },
+          "group": {
+            "type": "string",
+            "title": "Group",
+            "default": ""
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "default": ""
           }
         },
         "type": "object",
@@ -418,6 +687,21 @@
           "created_at": {
             "type": "string",
             "title": "Created At"
+          },
+          "preset": {
+            "type": "string",
+            "title": "Preset",
+            "default": ""
+          },
+          "group": {
+            "type": "string",
+            "title": "Group",
+            "default": ""
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "default": ""
           },
           "online": {
             "type": "boolean",
@@ -557,6 +841,57 @@
         ],
         "title": "MachineOut"
       },
+      "MachineUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          }
+        },
+        "type": "object",
+        "title": "MachineUpdate",
+        "description": "Partial edit of a machine's labels. Omitted fields are left alone."
+      },
       "PackageMutationRequest": {
         "properties": {
           "action": {
@@ -641,17 +976,135 @@
         ],
         "title": "PackageMutationResultItem"
       },
-      "SettingsUpdate": {
+      "Preset": {
         "properties": {
-          "settings": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Settings",
-            "default": {}
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "bundles": {
+            "items": {
+              "$ref": "#/components/schemas/Bundle"
+            },
+            "type": "array",
+            "title": "Bundles",
+            "default": []
+          },
+          "extra_apps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Extra Apps",
+            "default": []
           }
         },
         "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Preset",
+        "description": "A reusable role \u2014 \"workstation\", \"build server\" \u2014 applied to machines."
+      },
+      "SettingsUpdate": {
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/SystemSettings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settings"
+        ],
         "title": "SettingsUpdate"
+      },
+      "SystemSettings": {
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "title": "Hostname",
+            "default": ""
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "default": "UTC"
+          },
+          "nameservers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Nameservers",
+            "default": []
+          },
+          "firewall": {
+            "type": "boolean",
+            "title": "Firewall",
+            "default": true
+          },
+          "open_tcp_ports": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Open Tcp Ports",
+            "default": [
+              22
+            ]
+          },
+          "ssh": {
+            "type": "boolean",
+            "title": "Ssh",
+            "default": true
+          },
+          "ssh_password_login": {
+            "type": "boolean",
+            "title": "Ssh Password Login",
+            "default": false
+          },
+          "ssh_root_login": {
+            "type": "string",
+            "enum": [
+              "no",
+              "prohibit-password",
+              "yes"
+            ],
+            "title": "Ssh Root Login",
+            "default": "no"
+          },
+          "bluetooth": {
+            "type": "boolean",
+            "title": "Bluetooth",
+            "default": false
+          },
+          "sound": {
+            "type": "boolean",
+            "title": "Sound",
+            "default": true
+          },
+          "docker": {
+            "type": "boolean",
+            "title": "Docker",
+            "default": false
+          },
+          "allow_unfree": {
+            "type": "boolean",
+            "title": "Allow Unfree",
+            "default": true
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/LocalUser"
+            },
+            "type": "array",
+            "title": "Users",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "SystemSettings",
+        "description": "The machine-level NixOS options the desktop app can edit."
       },
       "ValidationError": {
         "properties": {

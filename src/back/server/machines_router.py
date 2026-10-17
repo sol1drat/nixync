@@ -10,6 +10,7 @@ from models import (
     MachineConfig,
     MachineCreate,
     MachineOut,
+    MachineUpdate,
     PackageMutationRequest,
     PackageMutationResponse,
     PackageMutationResultItem,
@@ -37,7 +38,13 @@ def register_machine(
     conn: sqlite3.Connection = Depends(get_db),
     connections: ConnectionManager = Depends(get_connections),
 ) -> MachineOut:
-    machine = database.create_machine(conn, name=payload.name)
+    machine = database.create_machine(
+        conn,
+        name=payload.name,
+        preset=payload.preset,
+        group=payload.group,
+        address=payload.address,
+    )
     return _with_online(machine, connections)
 
 
@@ -138,6 +145,35 @@ async def save_settings(
 
     desired = machine.config.model_copy(update={"settings": payload.settings})
     return await _deploy(conn, connections, machine, desired)
+
+
+@router.patch("/{machine_id}", response_model=MachineOut)
+def update_machine(
+    machine_id: str,
+    payload: MachineUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+    connections: ConnectionManager = Depends(get_connections),
+) -> MachineOut:
+    """Edit a machine's name, preset, group or address.
+
+    Labels only — nothing here changes what is deployed, so re-labelling a machine
+    never triggers a rebuild. Assigning a preset that does not exist is rejected
+    rather than stored, since a dangling label is just a typo nobody notices.
+    """
+    if database.get_machine(conn, machine_id) is None:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    if payload.preset and database.get_preset(conn, payload.preset) is None:
+        raise HTTPException(status_code=404, detail=f"Preset not found: {payload.preset}")
+
+    machine = database.update_machine(
+        conn,
+        machine_id,
+        name=payload.name,
+        preset=payload.preset,
+        group=payload.group,
+        address=payload.address,
+    )
+    return _with_online(machine, connections)
 
 
 @router.get("/{machine_id}", response_model=MachineOut)

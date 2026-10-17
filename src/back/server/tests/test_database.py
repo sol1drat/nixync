@@ -11,7 +11,7 @@ from database import (
     set_apply_result,
     update_telemetry,
 )
-from models import MachineConfig
+from models import LocalUser, MachineConfig, SystemSettings
 
 
 @pytest.fixture
@@ -159,19 +159,25 @@ def test_set_apply_result_ignores_stale_apply_id(conn):
     assert fetched.last_apply_id == "apply-current"
 
 
-def test_machine_config_carries_free_form_system_settings(conn):
+def test_machine_config_carries_typed_system_settings(conn):
     """Hostname, firewall and SSH are NixOS config, so they ride with the rest of it."""
     machine = create_machine(conn, name="settings-host")
-    config = MachineConfig(packages=["git"], settings={"hostname": "lab-05", "firewall": True})
+    config = MachineConfig(
+        packages=["git"],
+        settings=SystemSettings(hostname="lab-05", firewall=True, users=[LocalUser(name="ann")]),
+    )
 
     set_apply_pending(conn, machine.id, apply_id="a1", config=config)
 
     fetched = get_machine(conn, machine.id)
-    assert fetched.config.settings == {"hostname": "lab-05", "firewall": True}
+    assert fetched.config.settings.hostname == "lab-05"
+    assert fetched.config.settings.firewall is True
+    assert [u.name for u in fetched.config.settings.users] == ["ann"]
     assert fetched.config.packages == ["git"], "settings do not disturb packages"
 
 
-def test_settings_default_to_empty_rather_than_null(conn):
+def test_a_machine_nobody_configured_has_no_settings(conn):
+    """None is not the same as "configured to the defaults"."""
     machine = create_machine(conn, name="plain-host")
 
-    assert machine.config.settings == {}
+    assert machine.config.settings is None

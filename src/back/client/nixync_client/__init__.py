@@ -25,12 +25,14 @@ requires Qt, so the agent still runs headless.
 
 from nixync_client.admin import (
     AdminClient,
+    Bundle,
     Machine,
     NixyncApiError,
     PackageChangeResult,
+    Preset,
 )
 from nixync_client.agent import NixyncAgent
-from nixync_client.protocol import ApplyConfig, MachineConfig
+from nixync_client.protocol import ApplyConfig, LocalUser, MachineConfig, SystemSettings
 from nixync_client.telemetry import Reading, sample
 from nixync_client.transport import (
     AgentDisconnected,
@@ -42,13 +44,17 @@ __all__ = [
     "AdminClient",
     "AgentDisconnected",
     "ApplyConfig",
+    "Bundle",
+    "LocalUser",
     "Machine",
     "MachineConfig",
     "NixyncAgent",
     "NixyncApiError",
     "NixyncClientError",
     "PackageChangeResult",
+    "Preset",
     "Reading",
+    "SystemSettings",
     "UnknownMachineError",
     "sample",
 ]

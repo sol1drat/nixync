@@ -11,8 +11,10 @@ def test_schema_documents_every_rest_endpoint():
     paths = app.openapi()["paths"]
 
     assert sorted(paths["/machines"]) == ["get", "post"]
-    assert sorted(paths["/machines/{machine_id}"]) == ["delete", "get"]
+    assert sorted(paths["/machines/{machine_id}"]) == ["delete", "get", "patch"]
     assert sorted(paths["/machines/packages"]) == ["post"]
+    assert sorted(paths["/presets"]) == ["get"]
+    assert sorted(paths["/presets/{name}"]) == ["delete", "get", "put"]
 
 
 def test_package_mutation_action_is_constrained_to_add_and_remove():

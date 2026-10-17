@@ -24,13 +24,8 @@ def test_register_machine_returns_generated_id_and_empty_config(client):
 
     assert machine["id"]
     assert machine["name"] == "lab-01"
-    assert machine["config"] == {
-        "packages": [],
-        "users": [],
-        "groups": [],
-        "services": [],
-        "settings": {},
-    }
+    assert machine["config"]["packages"] == []
+    assert machine["config"]["settings"] is None, "nobody has configured it yet"
 
 
 def test_registered_machine_is_offline_until_a_socket_connects(client):
@@ -303,7 +298,8 @@ def test_saving_system_settings_stores_them_and_queues_a_deployment(client):
 
     assert response.status_code == 200
     stored = client.get(f"/machines/{machine['id']}").json()
-    assert stored["config"]["settings"] == {"hostname": "lab-05", "firewall": True}
+    assert stored["config"]["settings"]["hostname"] == "lab-05"
+    assert stored["config"]["settings"]["firewall"] is True
     assert stored["last_apply_status"] == "pending", "the machine must pick the change up"
 
 
@@ -317,9 +313,9 @@ def test_saving_settings_replaces_rather_than_merges(client):
 
     client.put(f"/machines/{machine['id']}/settings", json={"settings": {"hostname": "new"}})
 
-    assert client.get(f"/machines/{machine['id']}").json()["config"]["settings"] == {
-        "hostname": "new"
-    }
+    settings = client.get(f"/machines/{machine['id']}").json()["config"]["settings"]
+    assert settings["hostname"] == "new"
+    assert settings["bluetooth"] is False, "a dropped key reverts to its default"
 
 
 def test_saving_settings_does_not_disturb_installed_packages(client):
@@ -338,3 +334,87 @@ def test_saving_settings_for_an_unknown_machine_returns_404(client):
     response = client.put("/machines/does-not-exist/settings", json={"settings": {}})
 
     assert response.status_code == 404
+
+
+# -- machine labels ---------------------------------------------------------
+
+
+def test_a_machine_can_be_registered_with_its_labels(client):
+    machine = client.post(
+        "/machines",
+        json={"name": "lab-05", "preset": "Workstation", "group": "Lab A", "address": "10.0.4.15"},
+    ).json()
+
+    assert machine["preset"] == "Workstation"
+    assert machine["group"] == "Lab A"
+    assert machine["address"] == "10.0.4.15"
+
+
+def test_labels_default_to_empty_rather_than_null(client):
+    machine = register(client, "lab-bare")
+
+    assert (machine["preset"], machine["group"], machine["address"]) == ("", "", "")
+
+
+def test_patching_a_machine_changes_only_what_was_sent(client):
+    machine = client.post(
+        "/machines", json={"name": "lab-06", "group": "Lab B", "address": "10.0.0.9"}
+    ).json()
+
+    updated = client.patch(f"/machines/{machine['id']}", json={"preset": "Workstation"}).json()
+
+    assert updated["preset"] == "Workstation"
+    assert updated["group"] == "Lab B", "an omitted field is left alone"
+    assert updated["address"] == "10.0.0.9"
+
+
+def test_assigning_a_preset_that_does_not_exist_is_rejected(client):
+    """A dangling preset name is a typo nobody notices until the UI looks wrong."""
+    machine = register(client, "lab-07")
+
+    response = client.patch(f"/machines/{machine['id']}", json={"preset": "Nonexistent"})
+
+    assert response.status_code == 404
+    assert client.get(f"/machines/{machine['id']}").json()["preset"] == ""
+
+
+def test_relabelling_a_machine_deploys_nothing(client):
+    """Changing a label must never trigger a rebuild."""
+    machine = register(client, "lab-08")
+
+    client.patch(f"/machines/{machine['id']}", json={"group": "Lab C"})
+
+    assert client.get(f"/machines/{machine['id']}").json()["last_apply_status"] is None
+
+
+def test_patching_an_unknown_machine_is_a_404(client):
+    assert client.patch("/machines/does-not-exist", json={"group": "x"}).status_code == 404
+
+
+def test_local_users_round_trip_through_the_settings_endpoint(client):
+    machine = register(client, "lab-users")
+
+    client.put(
+        f"/machines/{machine['id']}/settings",
+        json={
+            "settings": {
+                "hostname": "lab-users",
+                "users": [{"name": "ann", "full_name": "Ann", "admin": True}],
+            }
+        },
+    )
+
+    users = client.get(f"/machines/{machine['id']}").json()["config"]["settings"]["users"]
+    assert users == [{"name": "ann", "full_name": "Ann", "admin": True}]
+
+
+def test_the_settings_schema_rejects_a_bad_ssh_root_login(client):
+    """Typed settings catch a nonsense value instead of storing it."""
+    machine = register(client, "lab-bad-ssh")
+
+    response = client.put(
+        f"/machines/{machine['id']}/settings",
+        json={"settings": {"hostname": "x", "ssh_root_login": "maybe"}},
+    )
+
+    assert response.status_code == 422

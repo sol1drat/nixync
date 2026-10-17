@@ -6,11 +6,11 @@ wrong surfaces as a single `NixyncApiError`, so the GUI never has to know that
 `requests` is underneath.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import requests
 
-from nixync_client.protocol import MachineConfig
+from nixync_client.protocol import MachineConfig, SystemSettings
 from nixync_client.transport import NixyncClientError
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -37,6 +37,9 @@ class Machine:
     created_at: str
     online: bool
     config: MachineConfig
+    preset: str = ""
+    group: str = ""
+    address: str = ""
     reported_config: MachineConfig | None = None
     cpu_percent: float | None = None
     ram_used_mb: int | None = None
@@ -64,6 +67,9 @@ class Machine:
             name=data["name"],
             created_at=data["created_at"],
             online=data["online"],
+            preset=data.get("preset", ""),
+            group=data.get("group", ""),
+            address=data.get("address", ""),
             config=MachineConfig.from_dict(data.get("config") or {}),
             reported_config=(
                 MachineConfig.from_dict(data["reported_config"])
@@ -81,6 +87,50 @@ class Machine:
             last_apply_message=data.get("last_apply_message"),
             last_apply_at=data.get("last_apply_at"),
         )
+
+
+@dataclass(frozen=True)
+class Bundle:
+    """A named group of configuration a preset switches on or off."""
+
+    name: str
+    description: str = ""
+    enabled: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Bundle":
+        return cls(
+            name=data["name"],
+            description=data.get("description", ""),
+            enabled=bool(data.get("enabled", True)),
+        )
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "description": self.description, "enabled": self.enabled}
+
+
+@dataclass(frozen=True)
+class Preset:
+    """A reusable role a machine can be assigned to."""
+
+    name: str
+    bundles: list[Bundle] = field(default_factory=list)
+    extra_apps: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Preset":
+        return cls(
+            name=data["name"],
+            bundles=[Bundle.from_dict(b) for b in data.get("bundles") or []],
+            extra_apps=list(data.get("extra_apps") or []),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "bundles": [b.to_dict() for b in self.bundles],
+            "extra_apps": list(self.extra_apps),
+        }
 
 
 @dataclass(frozen=True)
@@ -128,9 +178,38 @@ class AdminClient:
         """Whether the server is reachable — what the status bar polls."""
         return self._request("GET", "/status")
 
-    def register_machine(self, name: str) -> Machine:
+    def register_machine(
+        self, name: str, *, preset: str = "", group: str = "", address: str = ""
+    ) -> Machine:
         """Add a machine to the fleet. The returned id is what its agent connects with."""
-        return Machine.from_dict(self._request("POST", "/machines", json={"name": name}))
+        return Machine.from_dict(
+            self._request(
+                "POST",
+                "/machines",
+                json={"name": name, "preset": preset, "group": group, "address": address},
+            )
+        )
+
+    def update_machine(
+        self,
+        machine_id: str,
+        *,
+        name: str | None = None,
+        preset: str | None = None,
+        group: str | None = None,
+        address: str | None = None,
+    ) -> Machine:
+        """Edit a machine's labels. Omitted fields are left alone, and nothing deploys."""
+        changes = {
+            k: v
+            for k, v in {
+                "name": name, "preset": preset, "group": group, "address": address
+            }.items()
+            if v is not None
+        }
+        return Machine.from_dict(
+            self._request("PATCH", f"/machines/{machine_id}", json=changes)
+        )
 
     def list_machines(self) -> list[Machine]:
         return [Machine.from_dict(item) for item in self._request("GET", "/machines")]
@@ -152,6 +231,30 @@ class AdminClient:
     def remove_machine(self, machine_id: str) -> None:
         self._request("DELETE", f"/machines/{machine_id}")
 
+    # -- presets -----------------------------------------------------------
+
+    def list_presets(self) -> list[Preset]:
+        return [Preset.from_dict(item) for item in self._request("GET", "/presets")]
+
+    def get_preset(self, name: str) -> Preset | None:
+        """None when there is no such preset, rather than raising — callers ask freely."""
+        try:
+            return Preset.from_dict(self._request("GET", f"/presets/{name}"))
+        except NixyncApiError as error:
+            if error.status_code == 404:
+                return None
+            raise
+
+    def save_preset(self, preset: Preset) -> Preset:
+        """Create or replace a preset by name."""
+        return Preset.from_dict(
+            self._request("PUT", f"/presets/{preset.name}", json=preset.to_dict())
+        )
+
+    def delete_preset(self, name: str) -> None:
+        """Fails with 409 while machines are still assigned to it."""
+        self._request("DELETE", f"/presets/{name}")
+
     # -- package changes ---------------------------------------------------
 
     def change_packages(
@@ -165,14 +268,26 @@ class AdminClient:
         response = self._request("POST", "/machines/packages", json=payload)
         return [PackageChangeResult(**item) for item in response["results"]]
 
-    def set_settings(self, machine_id: str, settings: dict) -> PackageChangeResult:
+    def set_settings(
+        self, machine_id: str, settings: SystemSettings | dict
+    ) -> PackageChangeResult:
         """Replace a machine's system settings and deploy them.
 
         Send the whole settings object: this replaces rather than merges, so an option
         the operator switched off actually goes away.
         """
         return PackageChangeResult(
-            **self._request("PUT", f"/machines/{machine_id}/settings", json={"settings": settings})
+            **self._request(
+                "PUT",
+                f"/machines/{machine_id}/settings",
+                json={
+                    "settings": (
+                        settings.to_dict()
+                        if isinstance(settings, SystemSettings)
+                        else settings
+                    )
+                },
+            )
         )
 
     def add_packages(

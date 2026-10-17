@@ -1,6 +1,36 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+class LocalUser(BaseModel):
+    """A user account on a managed machine.
+
+    No password field, deliberately: passwords are set on the device and hashed
+    there, and must never reach a Nix configuration or this server's database.
+    """
+
+    name: str
+    full_name: str = ""
+    admin: bool = False  # member of "wheel", so can use sudo
+
+
+class SystemSettings(BaseModel):
+    """The machine-level NixOS options the desktop app can edit."""
+
+    hostname: str = ""
+    timezone: str = "UTC"
+    nameservers: list[str] = []
+    firewall: bool = True
+    open_tcp_ports: list[int] = [22]
+    ssh: bool = True
+    ssh_password_login: bool = False
+    ssh_root_login: Literal["no", "prohibit-password", "yes"] = "no"
+    bluetooth: bool = False
+    sound: bool = True
+    docker: bool = False
+    allow_unfree: bool = True
+    users: list[LocalUser] = []
 
 
 class MachineConfig(BaseModel):
@@ -8,16 +38,36 @@ class MachineConfig(BaseModel):
     users: list[str] = []
     groups: list[str] = []
     services: list[str] = []
-    # Hostname, timezone, firewall, SSH and local users: all NixOS configuration, so it
-    # travels in the same declarative payload an agent reconciles against. Free-form
-    # because the desktop app owns the schema; the server only stores and forwards it.
-    settings: dict[str, Any] = {}
+    # Hostname, timezone, firewall, SSH and local users are NixOS configuration like
+    # the package list, so they travel in the same declarative payload an agent
+    # reconciles against. None means no one has configured this machine yet, which is
+    # different from having configured it to the defaults.
+    settings: SystemSettings | None = None
+
+
+class Bundle(BaseModel):
+    """A named group of configuration a preset can switch on or off."""
+
+    name: str
+    description: str = ""
+    enabled: bool = True
+
+
+class Preset(BaseModel):
+    """A reusable role — "workstation", "build server" — applied to machines."""
+
+    name: str
+    bundles: list[Bundle] = []
+    extra_apps: list[str] = []
 
 
 class MachineOut(BaseModel):
     id: str
     name: str
     created_at: str
+    preset: str = ""
+    group: str = ""
+    address: str = ""
     online: bool
     cpu_percent: float | None = None
     ram_used_mb: int | None = None
@@ -35,6 +85,18 @@ class MachineOut(BaseModel):
 
 class MachineCreate(BaseModel):
     name: str
+    preset: str = ""
+    group: str = ""
+    address: str = ""
+
+
+class MachineUpdate(BaseModel):
+    """Partial edit of a machine's labels. Omitted fields are left alone."""
+
+    name: str | None = None
+    preset: str | None = None
+    group: str | None = None
+    address: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -94,4 +156,4 @@ class PackageMutationResponse(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    settings: dict[str, Any] = {}
+    settings: SystemSettings
