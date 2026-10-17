@@ -375,9 +375,11 @@ def test_approving_a_request_actually_deploys_the_app(client):
     client.add_machine("front-request")
     request = client.create_request("front-request", "htop", "student", "for monitoring")
 
-    client.approve_request(request.id)
+    # The decision comes back from the server rather than mutating the caller's copy,
+    # which is what a request held by another window would otherwise go stale against.
+    approved = client.approve_request(request.id)
 
-    assert request.status is sample_data.RequestStatus.APPROVED
+    assert approved.status is sample_data.RequestStatus.APPROVED
     assert "htop" in client.get_machine("front-request").extra_apps
 
 
@@ -385,9 +387,9 @@ def test_declining_a_request_deploys_nothing(client):
     client.add_machine("front-declined")
     request = client.create_request("front-declined", "doom", "student", "")
 
-    client.decline_request(request.id)
+    declined = client.decline_request(request.id)
 
-    assert request.status is sample_data.RequestStatus.DECLINED
+    assert declined.status is sample_data.RequestStatus.DECLINED
     assert client.get_machine("front-declined").extra_apps == []
 
 

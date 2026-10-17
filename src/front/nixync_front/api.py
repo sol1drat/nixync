@@ -17,6 +17,7 @@ from nixync_client import AdminClient, NixyncApiError
 from nixync_client import Bundle as ServerBundle
 from nixync_client import LocalUser as ServerUser
 from nixync_client import Machine as ServerMachine
+from nixync_client import AppRequest as ServerRequest
 from nixync_client import Preset as ServerPreset
 from nixync_client import SystemSettings as ServerSettings
 
@@ -103,6 +104,29 @@ def _preset_from(preset: ServerPreset) -> sample_data.Preset:
             sample_data.Bundle(b.name, b.description, b.enabled) for b in preset.bundles
         ],
         extra_apps=list(preset.extra_apps),
+    )
+
+
+_REQUEST_STATUS = {
+    "pending": sample_data.RequestStatus.PENDING,
+    "approved": sample_data.RequestStatus.APPROVED,
+    "declined": sample_data.RequestStatus.DECLINED,
+}
+
+
+def _request_from(request: ServerRequest) -> sample_data.AppRequest:
+    """Map a server request onto the record the Requests page renders.
+
+    The page identifies devices by name, and reads `when` as a datetime.
+    """
+    return sample_data.AppRequest(
+        id=request.id,
+        machine=request.machine_name,
+        app=request.app,
+        requested_by=request.requested_by,
+        when=_parse_time(request.created_at) or datetime.now(),
+        reason=request.reason,
+        status=_REQUEST_STATUS.get(request.status, sample_data.RequestStatus.PENDING),
     )
 
 
@@ -343,42 +367,47 @@ class NixyncClient:
             raise ApiError(str(e)) from e
         return _to_view_model(machine)
 
-    # -- not backed by the server yet --------------------------------------
-    # App requests and the updates page have no server data model. These stay on
-    # sample data until they do; see src/front/SPEC.md.
+    # -- app requests ------------------------------------------------------
 
     def list_requests(self) -> list[sample_data.AppRequest]:
-        return sorted(sample_data.REQUESTS, key=lambda r: r.when, reverse=True)
+        """Every request, newest first. The server orders them; do not re-sort."""
+        try:
+            return [_request_from(r) for r in self._admin.list_requests()]
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
 
     def pending_requests(self, machine: str | None = None) -> list[sample_data.AppRequest]:
-        return [r for r in self.list_requests()
-                if r.status is sample_data.RequestStatus.PENDING and machine in (None, r.machine)]
+        return [
+            r for r in self.list_requests()
+            if r.status is sample_data.RequestStatus.PENDING and machine in (None, r.machine)
+        ]
 
     def approve_request(self, request_id: int) -> sample_data.AppRequest:
-        """Approving deploys the app for real, even though the request itself is local."""
-        request = self._request(request_id)
-        request.status = sample_data.RequestStatus.APPROVED
-        self.add_apps([request.machine], [request.app])
-        return request
+        """Approve and deploy. The server does both, so they cannot disagree."""
+        try:
+            return _request_from(self._admin.approve_request(request_id))
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
 
     def decline_request(self, request_id: int) -> sample_data.AppRequest:
-        request = self._request(request_id)
-        request.status = sample_data.RequestStatus.DECLINED
-        return request
+        try:
+            return _request_from(self._admin.decline_request(request_id))
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
 
     def create_request(
         self, machine: str, app: str, requested_by: str, reason: str
     ) -> sample_data.AppRequest:
-        request = sample_data.AppRequest(
-            id=max((r.id for r in sample_data.REQUESTS), default=0) + 1,
-            machine=machine, app=app, requested_by=requested_by,
-            when=datetime.now(), reason=reason,
-        )
-        sample_data.REQUESTS.append(request)
-        return request
+        try:
+            return _request_from(
+                self._admin.create_request(self._machine_id(machine), app, requested_by, reason)
+            )
+        except NixyncApiError as e:
+            raise ApiError(str(e)) from e
 
-    def _request(self, request_id: int) -> sample_data.AppRequest:
-        return next(r for r in sample_data.REQUESTS if r.id == request_id)
+    # -- not backed by the server yet --------------------------------------
+    # The updates page has no server data model; it stays on sample data until
+    # it does. See src/front/SPEC.md.
 
     def current_update(self) -> sample_data.Update:
         return sample_data.CURRENT_UPDATE

@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 )
 
 from nixync_ui import style
-from nixync_front.api import NixyncClient
+from nixync_front.api import ApiError, NixyncClient
 from nixync_front.sample_data import AppRequest, RequestStatus
 from nixync_ui.widgets import Panel, SegmentButton, ago, clear_layout, page_header, primary_button, status_text
 
@@ -21,6 +21,7 @@ class RequestsPage(QWidget):
     message = Signal(str)
 
     def __init__(self, client: NixyncClient):
+        self.load_error = ""
         super().__init__()
         self.client = client
         self.machine_filter: str | None = None
@@ -29,7 +30,16 @@ class RequestsPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 24, 28, 24)
         outer.setSpacing(20)
-        outer.addWidget(page_header("Requests", "Apps people have asked to have installed on their device."))
+        top = QHBoxLayout()
+        top.addWidget(
+            page_header("Requests", "Apps people have asked to have installed on their device."),
+            1,
+        )
+        reload_button = QPushButton("Refresh")
+        reload_button.setToolTip("Re-read requests from the server")
+        reload_button.clicked.connect(self.refresh)
+        top.addWidget(reload_button, 0, Qt.AlignmentFlag.AlignTop)
+        outer.addLayout(top)
 
         filters = QHBoxLayout()
         self.segments = QButtonGroup(self)
@@ -79,7 +89,15 @@ class RequestsPage(QWidget):
         self.refresh()
 
     def refresh(self):
-        everything = [r for r in self.client.list_requests() if self.machine_filter in (None, r.machine)]
+        try:
+            requests = self.client.list_requests()
+            self.load_error = ""
+        except ApiError as e:
+            # Requests live on the server now, so this is a network call. An
+            # unreachable server must not take the page down.
+            requests = []
+            self.load_error = str(e)
+        everything = [r for r in requests if self.machine_filter in (None, r.machine)]
         pending = [r for r in everything if r.status is RequestStatus.PENDING]
         handled = [r for r in everything if r.status is not RequestStatus.PENDING]
         self.pending_button.setText(f"Pending ({len(pending)})")
@@ -148,11 +166,20 @@ class RequestsPage(QWidget):
         return card
 
     def _decide(self, request: AppRequest, approve: bool):
-        if approve:
-            self.client.approve_request(request.id)
-            self.message.emit(f"Approved {request.app} for {request.machine}. It will be installed on the next update.")
-        else:
-            self.client.decline_request(request.id)
-            self.message.emit(f"Declined {request.app} for {request.machine}.")
+        # Deciding can fail: the server refuses a request that was already handled —
+        # from another admin, or a second click — and approving deploys, which can
+        # fail on its own. Either way the operator needs to be told.
+        try:
+            if approve:
+                self.client.approve_request(request.id)
+                self.message.emit(
+                    f"Approved {request.app} for {request.machine}. "
+                    "It will be installed on the next update."
+                )
+            else:
+                self.client.decline_request(request.id)
+                self.message.emit(f"Declined {request.app} for {request.machine}.")
+        except ApiError as e:
+            self.message.emit(f"Couldn't update that request: {e}")
         self.refresh()
         self.changed.emit()
