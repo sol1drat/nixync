@@ -51,7 +51,7 @@ agent)
 tests)
     cd "$ROOT"
     exec env QT_QPA_PLATFORM=offscreen \
-        "$PY" -m pytest src/back/server src/back/client src/front "${@:2}"
+        "$PY" -m pytest src/back/server src/back/client src/back/helpers src/front src/shared "${@:2}"
     ;;
 
 *)

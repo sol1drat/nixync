@@ -19,8 +19,32 @@ A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06
 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>"""
 
 
-def ago(when: datetime) -> str:
+UNKNOWN_TIME = "unknown"
+
+
+def _as_datetime(when: "datetime | str | None") -> datetime | None:
+    """Accept what callers actually hold.
+
+    The server sends ISO 8601 strings and sample data holds datetimes, so both
+    arrive here. Parsing at this boundary means no caller has to remember which it
+    has — forgetting once crashed the device app's machine page.
+    """
+    if when is None:
+        return None
+    if isinstance(when, datetime):
+        return when
+    try:
+        return datetime.fromisoformat(when)
+    except (TypeError, ValueError):
+        return None
+
+
+def ago(when: "datetime | str | None") -> str:
     """Short relative time: "recently", "5m ago", "5h 2m ago", "2d 3h ago"."""
+    when = _as_datetime(when)
+    if when is None:
+        # One bad timestamp must not take the page down with it.
+        return UNKNOWN_TIME
     # Server timestamps are timezone-aware ISO 8601; sample_data uses naive local times.
     now = datetime.now(timezone.utc if when.tzinfo is not None else None)
     seconds = int((now - when).total_seconds())
@@ -36,8 +60,11 @@ def ago(when: datetime) -> str:
     return f"{days}d {rest}h ago" if rest else f"{days}d ago"
 
 
-def timestamp(when: datetime) -> str:
-    return f"{when:%d %b %Y, %H:%M} ({ago(when)})"
+def timestamp(when: "datetime | str | None") -> str:
+    parsed = _as_datetime(when)
+    if parsed is None:
+        return UNKNOWN_TIME
+    return f"{parsed:%d %b %Y, %H:%M} ({ago(parsed)})"
 
 
 _SEARCH_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24"
