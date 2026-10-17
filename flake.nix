@@ -1,11 +1,10 @@
 {
   description = "A Nix-flake-based Python development environment";
 
-  inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1"; # unstable Nixpkgs
+  inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
 
   outputs =
     { self, ... }@inputs:
-
     let
       inherit (inputs.nixpkgs) lib;
 
@@ -25,20 +24,8 @@
           }
         );
 
-      /*
-        Change this value ({major}.{min}) to
-        update the Python virtual-environment
-        version. When you do this, make sure
-        to delete the `.venv` directory to
-        have the hook rebuild it for the new
-        version, since it won't overwrite an
-        existing one. After this, reload the
-        development shell to rebuild it.
-        You'll see a warning asking you to
-        do this when version mismatches are
-        present. For safety, removal should
-        be a manual step, even if trivial.
-      */
+      # Change this when upgrading Python.
+      # Delete .venv afterward to recreate it.
       version = "3.13";
     in
     {
@@ -54,19 +41,76 @@
             ];
 
           python = pkgs."python${concatMajorMinor version}";
+
+          # Native runtime dependencies for pip-installed PySide6.
+          qtRuntimeLibraries =
+            if pkgs.stdenv.hostPlatform.isLinux then
+              (with pkgs; [
+                stdenv.cc.cc.lib
+                glib
+                zlib
+                zstd
+                libGL
+                libxkbcommon
+                wayland
+                dbus
+                fontconfig
+                freetype
+
+                # X11 libraries
+                libx11
+                libxext
+                libxrender
+                libxi
+                libxcursor
+                libxrandr
+                libxfixes
+                libxinerama
+                libxcomposite
+                libxdamage
+                libxcb
+
+                # XCB utilities
+                libxcb-util
+                libxcb-cursor
+                libxcb-image
+                libxcb-keysyms
+                libxcb-render-util
+                libxcb-wm
+              ])
+            else
+              [ ];
         in
         {
           default = pkgs.mkShellNoCC {
             venvDir = ".venv";
 
+            packages = [
+              python
+            ]
+            ++ (with python.pkgs; [
+              venvShellHook
+              pip
+            ])
+            ++ [
+              self.formatter.${system}
+            ];
+
+            # Use libraries from this flake's Nixpkgs revision.
+            # Do not scan the entire Nix store for libraries.
+            LD_LIBRARY_PATH = lib.optionalString pkgs.stdenv.hostPlatform.isLinux (
+              lib.makeLibraryPath qtRuntimeLibraries
+            );
+
             postShellHook = ''
               venvVersionWarn() {
-              	local venvVersion
-              	venvVersion="$("$venvDir/bin/python" -c 'import platform; print(platform.python_version())')"
+                local venvVersion
+                venvVersion="$("$venvDir/bin/python" -c \
+                  'import platform; print(platform.python_version())')"
 
-              	[[ "$venvVersion" == "${python.version}" ]] && return
+                [[ "$venvVersion" == "${python.version}" ]] && return
 
-              	cat <<EOF
+                cat <<EOF
               Warning: Python version mismatch: [$venvVersion (venv)] != [${python.version}]
                        Delete '$venvDir' and reload to rebuild for version ${python.version}
               EOF
@@ -74,24 +118,6 @@
 
               venvVersionWarn
             '';
-
-            packages =
-              (with python.pkgs; [
-                venvShellHook
-                pip
-
-                # Add whatever else you'd like here.
-                # pkgs.basedpyright
-
-                # pkgs.black
-                # or
-                # python.pkgs.black
-
-                # pkgs.ruff
-                # or
-                # python.pkgs.ruff
-              ])
-              ++ [ self.formatter.${system} ];
           };
         }
       );
