@@ -11,6 +11,8 @@ class Config:
     server_url: str = "http://127.0.0.1:8000"
     request_timeout: float = 3.0
     poll_interval_seconds: int = 10
+    # search.nixos.org index: latest-<schema version>-nixos-<channel>
+    nixos_search_index: str = "latest-51-nixos-26.05"
 
 
 def load_config() -> Config:
@@ -29,4 +31,5 @@ def load_config() -> Config:
         server_url=config.server_url.rstrip("/"),
         request_timeout=float(config.request_timeout),
         poll_interval_seconds=int(config.poll_interval_seconds),
+        nixos_search_index=config.nixos_search_index,
     )

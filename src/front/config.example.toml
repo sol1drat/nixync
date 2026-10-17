@@ -4,3 +4,6 @@
 server_url = "http://127.0.0.1:8000"
 request_timeout = 3.0
 poll_interval_seconds = 10
+
+# Index used for app search on search.nixos.org (latest-<schema>-nixos-<channel>).
+nixos_search_index = "latest-51-nixos-26.05"

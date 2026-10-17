@@ -12,28 +12,28 @@ AUTHORIZED_KEY_SNIPPET = (
 
 
 class AddMachineDialog(QDialog):
-    def __init__(self, roles: list[str], parent=None):
+    def __init__(self, presets: list[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add machine")
+        self.setWindowTitle("Add device")
         self.setMinimumWidth(620)
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
 
-        layout.addWidget(QLabel("<b>1. Which machine?</b>"))
+        layout.addWidget(QLabel("<b>1. Which device?</b>"))
         form = QFormLayout()
         self.name = QLineEdit()
         self.name.setPlaceholderText("lab-05")
         self.address = QLineEdit()
         self.address.setPlaceholderText("10.0.4.15")
-        self.role = QComboBox()
-        self.role.addItems(roles)
+        self.preset = QComboBox()
+        self.preset.addItems(presets)
         form.addRow("Name", self.name)
         form.addRow("IP address or hostname", self.address)
-        form.addRow("Role", self.role)
+        form.addRow("Preset", self.preset)
         layout.addLayout(form)
 
         layout.addWidget(QLabel("<b>2. Let Nixync log in to it</b>"))
-        layout.addWidget(QLabel("Add these lines to the machine's configuration once, then rebuild it."))
+        layout.addWidget(QLabel("Add these lines to the device's configuration once, then rebuild it."))
         snippet = QPlainTextEdit(AUTHORIZED_KEY_SNIPPET)
         snippet.setReadOnly(True)
         snippet.setFixedHeight(60)
@@ -42,14 +42,14 @@ class AddMachineDialog(QDialog):
         copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(AUTHORIZED_KEY_SNIPPET))
         layout.addWidget(copy)
 
-        layout.addWidget(QLabel("<b>3. Check it's the right machine</b>"))
-        layout.addWidget(QLabel("This code should match the one the machine shows for its SSH key."))
-        layout.addWidget(QLabel("<tt>SHA256:(fetched when the machine is reached)</tt>"))
+        layout.addWidget(QLabel("<b>3. Check it's the right device</b>"))
+        layout.addWidget(QLabel("This code should match the one the device shows for its SSH key."))
+        layout.addWidget(QLabel("<tt>SHA256:(fetched when the device is reached)</tt>"))
         self.match = QCheckBox("The codes match")
         layout.addWidget(self.match)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        self.add = buttons.addButton("Add machine", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.add = buttons.addButton("Add device", QDialogButtonBox.ButtonRole.AcceptRole)
         self.add.setProperty("primary", True)
         self.add.setEnabled(False)
         buttons.accepted.connect(self.accept)
@@ -63,4 +63,4 @@ class AddMachineDialog(QDialog):
         self.add.setEnabled(bool(self.name.text().strip() and self.address.text().strip() and self.match.isChecked()))
 
     def values(self) -> dict:
-        return {"name": self.name.text().strip(), "address": self.address.text().strip(), "role": self.role.currentText()}
+        return {"name": self.name.text().strip(), "address": self.address.text().strip(), "preset": self.preset.currentText()}

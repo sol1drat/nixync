@@ -6,7 +6,7 @@ calls the UI expects; they return sample data until the server grows them.
 
 import requests
 
-from nixync_front import sample_data
+from nixync_front import nixos_search, sample_data
 from nixync_front.config import Config
 
 
@@ -18,6 +18,7 @@ class NixyncClient:
     def __init__(self, config: Config):
         self.base_url = config.server_url
         self.timeout = config.request_timeout
+        self.search_index = config.nixos_search_index
         self.session = requests.Session()
 
     def _get(self, path: str):
@@ -35,9 +36,64 @@ class NixyncClient:
     def list_machines(self) -> list[sample_data.Machine]:
         return list(sample_data.MACHINES)
 
-    # TODO: replace with GET /roles once the server has it.
-    def list_roles(self) -> list[sample_data.Role]:
-        return list(sample_data.ROLES)
+    # TODO: replace with GET /machines/{name} once the server has it.
+    def get_machine(self, name: str) -> sample_data.Machine:
+        return next(m for m in sample_data.MACHINES if m.name == name)
+
+    # TODO: replace with a POST to the server, which then builds each device.
+    def add_apps(self, devices: list[str], apps: list[str]) -> dict[str, list[str]]:
+        """Add apps to several devices. Returns what was actually added per device,
+        skipping apps a device already has from its preset or its own list."""
+        added = {}
+        for name in devices:
+            machine = self.get_machine(name)
+            preset = self.get_preset(machine.preset)
+            have = set(machine.extra_apps) | set(preset.extra_apps if preset else [])
+            new = [a for a in apps if a not in have]
+            machine.extra_apps.extend(new)
+            added[name] = new
+        return added
+
+    # TODO: replace with GET /presets once the server has it.
+    def list_presets(self) -> list[sample_data.Preset]:
+        return list(sample_data.PRESETS)
+
+    def get_preset(self, name: str) -> sample_data.Preset | None:
+        return next((p for p in self.list_presets() if p.name == name), None)
+
+    def search_apps(self, query: str) -> list[nixos_search.Package]:
+        """Search nixpkgs on search.nixos.org. Blocking; call it off the UI thread."""
+        return nixos_search.search(query, self.search_index)
+
+    # TODO: replace with GET /requests once the server has it.
+    def list_requests(self) -> list[sample_data.AppRequest]:
+        return sorted(sample_data.REQUESTS, key=lambda r: r.when, reverse=True)
+
+    def pending_requests(self, machine: str | None = None) -> list[sample_data.AppRequest]:
+        return [r for r in self.list_requests()
+                if r.status is sample_data.RequestStatus.PENDING and machine in (None, r.machine)]
+
+    # TODO: replace with POST /requests/{id}/approve once the server has it.
+    # Approving adds the app to the machine; the server should then start a build.
+    def approve_request(self, request_id: int) -> sample_data.AppRequest:
+        request = self._request(request_id)
+        request.status = sample_data.RequestStatus.APPROVED
+        machine = self.get_machine(request.machine)
+        if request.app not in machine.extra_apps:
+            machine.extra_apps.append(request.app)
+        return request
+
+    # TODO: replace with POST /requests/{id}/decline once the server has it.
+    def decline_request(self, request_id: int) -> sample_data.AppRequest:
+        request = self._request(request_id)
+        request.status = sample_data.RequestStatus.DECLINED
+        return request
+
+    def _request(self, request_id: int) -> sample_data.AppRequest:
+        return next(r for r in sample_data.REQUESTS if r.id == request_id)
+
+    def describe_app(self, name: str) -> str:
+        return next((a.description for a in sample_data.APP_CATALOG if a.name == name), "")
 
     # TODO: replace with GET /updates/current once the server has it.
     def current_update(self) -> sample_data.Update:
