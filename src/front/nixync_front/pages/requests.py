@@ -3,10 +3,10 @@ from PySide6.QtWidgets import (
     QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.api import NixyncClient
 from nixync_front.sample_data import AppRequest, RequestStatus
-from nixync_front.widgets import Panel, SegmentButton, ago, clear_layout, page_header, primary_button, status_text
+from nixync_ui.widgets import Panel, SegmentButton, ago, clear_layout, page_header, primary_button, status_text
 
 def status_color(status: RequestStatus) -> str:
     return {RequestStatus.PENDING: style.PENDING, RequestStatus.APPROVED: style.OK,

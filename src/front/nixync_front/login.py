@@ -6,10 +6,11 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QToolButton, QVBoxLayout, QWidget,
 )
 
-from nixync_front import __version__, style
+from nixync_front import __version__
+from nixync_ui import style
 from nixync_front.api import ApiError, NixyncClient
 from nixync_front.config import Config
-from nixync_front.widgets import eye_icon, moon_icon, primary_button, sun_icon
+from nixync_ui.widgets import eye_icon, moon_icon, primary_button, sun_icon
 
 CARD_WIDTH = 400
 

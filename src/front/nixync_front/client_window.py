@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QIcon
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.api import ApiError, NixyncClient
 from nixync_front.app_picker import _Search
 from nixync_front.config import Config
@@ -23,7 +23,7 @@ from nixync_front.nixos_search import Package
 from nixync_front.sample_data import APP_CATALOG, RequestStatus
 from nixync_front.settings_panel import SettingsPanel
 from nixync_front.users_panel import UsersPanel
-from nixync_front.widgets import (
+from nixync_ui.widgets import (
     FlowLayout, Panel, RingGauge, ago, clear_layout, page_header, primary_button, search_icon, status_text, cancel_box,
     themed_icon,
 )

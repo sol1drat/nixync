@@ -1,4 +1,11 @@
-"""Validate a device's editable NixOS settings and render them as Nix."""
+"""Validate a device's editable NixOS settings, and preview them as Nix.
+
+Validation and diffing live here because they are form concerns. The rendering
+itself does not: the agent writes the same Nix to real machines, so there is one
+renderer in `nixync_client.nix` and this module just adapts the UI's dataclass to it.
+A second implementation would drift, and the preview would stop matching the file
+that actually lands on the device.
+"""
 
 import ipaddress
 import re
@@ -65,48 +72,13 @@ def changed_fields(old: SystemSettings, new: SystemSettings) -> list[str]:
     return [labels[f.name] for f in fields(SystemSettings) if getattr(old, f.name) != getattr(new, f.name)]
 
 
-def _nix_string(text: str) -> str:
-    """Quote text as a Nix string, escaping what Nix would otherwise interpret."""
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("${", "\\${") + '"'
-
-
-def _b(value: bool) -> str:
-    return "true" if value else "false"
-
-
-def _render_users(s: SystemSettings) -> list[str]:
-    lines = []
-    for user in s.users:
-        groups = ' "wheel" ' if user.admin else " "
-        lines += ["", f"  users.users.{user.name} = {{", "    isNormalUser = true;"]
-        if user.full_name:
-            lines.append(f"    description = {_nix_string(user.full_name)};")
-        lines += [f"    extraGroups = [{groups}];", "  };"]
-    return lines
-
-
 def render(s: SystemSettings) -> str:
-    """The Nix that Nixync would put in the device's configuration for these settings."""
-    nameservers = " ".join(f'"{n}"' for n in s.nameservers)
-    ports = " ".join(str(p) for p in s.open_tcp_ports)
-    lines = [
-        "{",
-        f'  networking.hostName = "{s.hostname}";',
-        f"  networking.nameservers = [ {nameservers} ];" if s.nameservers else "  networking.nameservers = [ ];",
-        f"  networking.firewall.enable = {_b(s.firewall)};",
-        f"  networking.firewall.allowedTCPPorts = [ {ports} ];" if ports else "  networking.firewall.allowedTCPPorts = [ ];",
-        "",
-        f'  time.timeZone = "{s.timezone}";',
-        "",
-        f"  services.openssh.enable = {_b(s.ssh)};",
-        f"  services.openssh.settings.PasswordAuthentication = {_b(s.ssh_password_login)};",
-        f'  services.openssh.settings.PermitRootLogin = "{s.ssh_root_login}";',
-        "",
-        f"  hardware.bluetooth.enable = {_b(s.bluetooth)};",
-        f"  services.pipewire.enable = {_b(s.sound)};",
-        f"  virtualisation.docker.enable = {_b(s.docker)};",
-        f"  nixpkgs.config.allowUnfree = {_b(s.allow_unfree)};",
-        *_render_users(s),
-        "}",
-    ]
-    return "\n".join(lines)
+    """The Nix that Nixync will put on the device for these settings.
+
+    Shows exactly what the agent would write, because it is the same renderer.
+    """
+    from nixync_client.nix import render as render_config
+    from nixync_front.api import _settings_to_server
+    from nixync_client.protocol import MachineConfig
+
+    return render_config(MachineConfig(settings=_settings_to_server(s)))

@@ -3,8 +3,9 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QTextBrowser, QVBoxLayout
 
-from nixync_front import ai, style
-from nixync_front.widgets import safe_emit
+from nixync_front import ai
+from nixync_ui import style
+from nixync_ui.widgets import safe_emit
 from nixync_front.sample_data import Machine, MachineError, Preset
 
 

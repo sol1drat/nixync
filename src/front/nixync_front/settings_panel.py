@@ -7,9 +7,10 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from nixync_front import nix_config, style
+from nixync_front import nix_config
+from nixync_ui import style
 from nixync_front.sample_data import SystemSettings
-from nixync_front.widgets import Panel, primary_button
+from nixync_ui.widgets import Panel, primary_button
 
 TIMEZONES = sorted(available_timezones())
 

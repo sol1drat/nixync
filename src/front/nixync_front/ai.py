@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import anthropic
 
 from nixync_front.sample_data import Machine, MachineError, Preset
-from nixync_front.widgets import timestamp
+from nixync_ui.widgets import timestamp
 
 MODEL = "claude-opus-5-5"
 

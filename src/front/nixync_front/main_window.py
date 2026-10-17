@@ -5,12 +5,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.api import ApiError, NixyncClient
 from nixync_front.config import Config
 from nixync_front.dialogs import AddAppsDialog, AddMachineDialog, UndoUpdateDialog
 from nixync_front.pages import MachineConfigPage, MachinesPage, PresetsPage, RequestsPage, UpdatesPage
-from nixync_front.widgets import dot, moon_icon, panel_icon, safe_emit, sun_icon, themed_icon
+from nixync_ui.widgets import dot, moon_icon, panel_icon, safe_emit, sun_icon, themed_icon
 
 
 class _StatusSignals(QObject):

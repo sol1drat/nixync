@@ -4,10 +4,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from nixync_front import nix_config, style
+from nixync_front import nix_config
+from nixync_ui import style
 from nixync_front.api import ApiError, NixyncClient
 from nixync_front.sample_data import LocalUser, Machine
-from nixync_front.widgets import Panel, cancel_box, clear_layout, primary_button, status_text
+from nixync_ui.widgets import Panel, cancel_box, clear_layout, primary_button, status_text
 
 MIN_PASSWORD = 8
 

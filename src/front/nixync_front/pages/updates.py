@@ -6,11 +6,11 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QPushButton, QScrollArea, QTableWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.api import NixyncClient
 from nixync_front.dialogs.ask_ai import AskAIDialog
 from nixync_front.sample_data import Build, Health, Machine, MachineError, Preset
-from nixync_front.widgets import SegmentButton, ago, centered, gear_icon, page_header, status_text, themed_icon
+from nixync_ui.widgets import SegmentButton, ago, centered, gear_icon, page_header, status_text, themed_icon
 
 ROW_HEIGHT = 50
 RECENT_LIMIT = 15

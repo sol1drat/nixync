@@ -13,6 +13,7 @@ import pytest
 
 FRONT_ROOT = Path(__file__).resolve().parents[1]
 CLIENT_LIBRARY = FRONT_ROOT.parent / "back" / "client"
+SHARED_UI = FRONT_ROOT.parent / "shared"
 
 SMOKE_SCRIPT = r"""
 import os
@@ -48,7 +49,7 @@ def test_main_window_builds_against_a_live_server(live_server):
         **os.environ,
         "QT_QPA_PLATFORM": "offscreen",
         "PYTHONPATH": os.pathsep.join(
-            [str(FRONT_ROOT), str(CLIENT_LIBRARY), os.environ.get("PYTHONPATH", "")]
+            [str(FRONT_ROOT), str(CLIENT_LIBRARY), str(SHARED_UI), os.environ.get("PYTHONPATH", "")]
         ),
     }
     result = subprocess.run(

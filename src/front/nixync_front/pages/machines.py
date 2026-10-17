@@ -5,10 +5,10 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QTableWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.api import ApiError, NixyncClient
 from nixync_front.sample_data import Health, Machine
-from nixync_front.widgets import (
+from nixync_ui.widgets import (
     usage_color,
     ago, centered, download_icon, gear_icon, page_header, primary_button, search_icon,
     status_text, themed_icon,

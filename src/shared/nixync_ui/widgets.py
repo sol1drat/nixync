@@ -148,7 +148,7 @@ def clear_layout(layout: QLayout):
 def dot(color: str, size: int = 10) -> QLabel:
     """A small colored circle. Theme colors are applied by the stylesheet (QLabel#Dot[tone=...]),
     so dots follow theme switches without any per-widget work."""
-    from nixync_front import style
+    from nixync_ui import style
     label = QLabel()
     label.setObjectName("Dot")
     label.setFixedSize(size, size)
@@ -230,7 +230,7 @@ def safe_emit(signal, *args):
 
 def usage_color(percent: float) -> str:
     """Green under 60%, amber from 60%, red from 80%: the same rule for bars and rings."""
-    from nixync_front import style
+    from nixync_ui import style
     if percent >= 80:
         return style.PROBLEM
     if percent >= 60:
@@ -254,7 +254,7 @@ class RingGauge(QWidget):
         return self.sizeHint()
 
     def paintEvent(self, _event):
-        from nixync_front import style
+        from nixync_ui import style
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         width = 8
@@ -305,7 +305,7 @@ def centered(widget: QWidget, align=Qt.AlignmentFlag.AlignLeft) -> QWidget:
 
 def status_text(color: str, text: str) -> QLabel:
     """A status word shown in its status color, e.g. "Problem" in red. Follows theme switches."""
-    from nixync_front import style
+    from nixync_ui import style
     label = QLabel(text)
     label.setObjectName("StatusText")
     role = style.role_of(color)
@@ -319,7 +319,7 @@ def status_text(color: str, text: str) -> QLabel:
 def themed_icon(target, maker, role: str = "muted", owner=None):
     """Give a button or action an icon drawn in a theme color, redrawn on theme switches.
     `owner` is the widget whose lifetime the icon follows (defaults to `target`)."""
-    from nixync_front import style
+    from nixync_ui import style
     style.themed(owner or target, lambda: target.setIcon(maker(style.color(role))))
 
 
@@ -355,7 +355,7 @@ class ThemedDialogs(QObject):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.Polish and isinstance(obj, QDialog):
-            from nixync_front import style
+            from nixync_ui import style
             style.restyle_if_stale(obj)
         return False
 

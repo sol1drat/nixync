@@ -4,12 +4,12 @@ from PySide6.QtCore import QSettings
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.config import load_config
 from nixync_front.login import LoginWindow
 from nixync_front.client_window import ClientWindow
 from nixync_front.main_window import MainWindow
-from nixync_front.widgets import PointerCursors, ThemedDialogs
+from nixync_ui.widgets import PointerCursors, ThemedDialogs
 
 DEFAULT_THEME = "dark"
 

@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QRadioButton, QVBoxLayout
 
-from nixync_front.widgets import cancel_box
+from nixync_ui.widgets import cancel_box
 
 
 class UndoUpdateDialog(QDialog):

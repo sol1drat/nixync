@@ -3,11 +3,11 @@ from PySide6.QtWidgets import (
     QCheckBox, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
 
-from nixync_front import style
+from nixync_ui import style
 from nixync_front.api import ApiError, NixyncClient
 from nixync_front.app_picker import AppPicker
 from nixync_front.sample_data import Preset
-from nixync_front.widgets import Panel, clear_layout, page_header, primary_button
+from nixync_ui.widgets import Panel, clear_layout, page_header, primary_button
 
 
 class PresetsPage(QWidget):

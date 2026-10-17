@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QVBoxLayout
 
-from nixync_front.widgets import cancel_box
+from nixync_ui.widgets import cancel_box
 
 
 class AddMachineDialog(QDialog):
