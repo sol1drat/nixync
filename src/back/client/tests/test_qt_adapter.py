@@ -16,7 +16,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # the pip wheel fails to find libstdc++ — would error the whole suite instead of
 # skipping an optional extra.
 try:
-    from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
+    # QApplication, not QCoreApplication: the desktop-app tests in src/front need a
+    # widgets-capable instance, Qt allows only one per process, and mixing the two
+    # classes segfaults when both suites run together.
+    from PySide6.QtCore import QEventLoop, QTimer
+    from PySide6.QtWidgets import QApplication
 except ImportError as unavailable:  # pragma: no cover - environment dependent
     pytest.skip(
         f"the Qt adapter is optional and PySide6 is unusable here: {unavailable}",
@@ -30,10 +34,10 @@ from nixync_client.qt import QtAgent  # noqa: E402
 SIGNAL_TIMEOUT_MS = 10_000
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def qt_app():
-    """One QCoreApplication for the module — Qt allows only a single instance."""
-    app = QCoreApplication.instance() or QCoreApplication([])
+    """One QApplication for the session — Qt allows only a single instance."""
+    app = QApplication.instance() or QApplication([])
     yield app
 
 
@@ -62,7 +66,7 @@ class Recorder:
         """Pump the Qt event loop until the signal has fired `count` times."""
         deadline = time.monotonic() + timeout_ms / 1000
         while len(self.events) < count and time.monotonic() < deadline:
-            QCoreApplication.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 10)
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 10)
             time.sleep(0.01)
         if len(self.events) < count:
             pytest.fail(

@@ -116,6 +116,14 @@ class AdminClient:
 
     # -- machines ----------------------------------------------------------
 
+    def login(self, username: str, password: str) -> dict:
+        """Check operator credentials against the server.
+
+        Raises NixyncApiError with status_code 401 for bad credentials and None when
+        the server could not be reached — the sign-in screen needs to tell those apart.
+        """
+        return self._request("POST", "/login", json={"username": username, "password": password})
+
     def get_status(self) -> dict:
         """Whether the server is reachable — what the status bar polls."""
         return self._request("GET", "/status")
@@ -156,6 +164,16 @@ class AdminClient:
         payload = {"action": action, "packages": packages, "machine_ids": machine_ids}
         response = self._request("POST", "/machines/packages", json=payload)
         return [PackageChangeResult(**item) for item in response["results"]]
+
+    def set_settings(self, machine_id: str, settings: dict) -> PackageChangeResult:
+        """Replace a machine's system settings and deploy them.
+
+        Send the whole settings object: this replaces rather than merges, so an option
+        the operator switched off actually goes away.
+        """
+        return PackageChangeResult(
+            **self._request("PUT", f"/machines/{machine_id}/settings", json={"settings": settings})
+        )
 
     def add_packages(
         self, packages: list[str], machine_ids: list[str] | None = None

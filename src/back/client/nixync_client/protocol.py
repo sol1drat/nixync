@@ -15,6 +15,9 @@ class MachineConfig:
     users: list[str] = field(default_factory=list)
     groups: list[str] = field(default_factory=list)
     services: list[str] = field(default_factory=list)
+    # Hostname, timezone, firewall, SSH, local users — NixOS configuration too, so it
+    # rides in the same declarative payload. Free-form: the desktop app owns the schema.
+    settings: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "MachineConfig":
@@ -24,6 +27,7 @@ class MachineConfig:
             users=list(data.get("users") or []),
             groups=list(data.get("groups") or []),
             services=list(data.get("services") or []),
+            settings=dict(data.get("settings") or {}),
         )
 
     def to_dict(self) -> dict:
@@ -32,6 +36,7 @@ class MachineConfig:
             "users": list(self.users),
             "groups": list(self.groups),
             "services": list(self.services),
+            "settings": dict(self.settings),
         }
 
 

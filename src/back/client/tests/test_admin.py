@@ -213,3 +213,61 @@ def test_machines_expose_telemetry_once_an_agent_has_reported(live_server, admin
     assert 0.0 <= live.cpu_percent <= 100.0
     assert live.ram_total_mb > 0
     assert live.disk_total_gb > 0
+
+
+# -- sign-in ----------------------------------------------------------------
+
+
+def test_signing_in_with_the_configured_credentials_returns_the_user(admin):
+    assert admin.login("admin", "password") == {"username": "admin"}
+
+
+def test_a_wrong_password_raises_a_typed_error_with_401(admin):
+    with pytest.raises(NixyncApiError) as error:
+        admin.login("admin", "wrong")
+
+    assert error.value.status_code == 401
+
+
+def test_signing_in_against_an_unreachable_server_is_distinguishable_from_a_bad_password():
+    """The login screen must tell these two apart to say anything useful."""
+    offline = AdminClient("http://127.0.0.1:1", timeout=0.5)
+
+    with pytest.raises(NixyncApiError) as error:
+        offline.login("admin", "password")
+
+    assert error.value.status_code is None
+
+
+# -- system settings --------------------------------------------------------
+
+
+def test_setting_a_machines_system_settings_persists_them(admin):
+    machine = admin.register_machine("settings-box")
+
+    admin.set_settings(machine.id, {"hostname": "lab-05", "firewall": True})
+
+    assert admin.get_machine(machine.id).config.settings == {
+        "hostname": "lab-05",
+        "firewall": True,
+    }
+
+
+def test_saving_settings_leaves_the_package_list_alone(admin):
+    machine = admin.register_machine("settings-and-apps")
+    admin.add_packages(["git"], machine_ids=[machine.id])
+
+    admin.set_settings(machine.id, {"hostname": "lab-06"})
+
+    fetched = admin.get_machine(machine.id)
+    assert fetched.config.packages == ["git"]
+    assert fetched.config.settings == {"hostname": "lab-06"}
+
+
+def test_saving_settings_queues_a_deployment_so_the_machine_picks_them_up(admin):
+    machine = admin.register_machine("settings-deploy")
+
+    result = admin.set_settings(machine.id, {"hostname": "lab-07"})
+
+    assert result.delivery in {"pushed", "queued"}
+    assert admin.get_machine(machine.id).last_apply_status == "pending"
