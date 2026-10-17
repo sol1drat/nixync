@@ -2,6 +2,7 @@
 # Start a piece of the Nixync demo.
 #
 #   ./run-demo.sh server          the fleet server, reachable from other machines
+#   ./run-demo.sh machines        list the rows of the machines table
 #   ./run-demo.sh gui             the desktop app
 #   ./run-demo.sh agent <id>      a machine agent (prints instead of installing)
 #   ./run-demo.sh tests           the whole test suite
@@ -22,9 +23,12 @@ qt_libs() {
     # shadow the system one and break every other binary.
     local libs="" missing found d
     for _ in $(seq 1 15); do
-        missing=$(LD_LIBRARY_PATH="$libs" QT_QPA_PLATFORM=offscreen "$PY" -c \
-            'from PySide6.QtWidgets import QApplication' 2>&1 \
-            | grep -oP '^ImportError: \K[^:]+\.so[^:]*' | head -1) || true
+        # Probe with the platform plugin the session will actually use: offscreen
+        # loads none of the wayland/xcb libraries, so they would go unnoticed.
+        missing=$(LD_LIBRARY_PATH="$libs" QT_DEBUG_PLUGINS=1 \
+            QT_QPA_PLATFORM="${WAYLAND_DISPLAY:+wayland}" "$PY" -c \
+            'from PySide6.QtWidgets import QApplication; QApplication([])' 2>&1 \
+            | grep -oP '(^ImportError: |: )\K[^: ]+\.so[^: ]*(?=: cannot open shared object)' | head -1) || true
         [ -z "$missing" ] && break
         found=""
         for d in $(find /nix/store -maxdepth 2 -type d -name lib 2>/dev/null); do
@@ -52,6 +56,9 @@ server)
     exec env NIXYNC_DB="${NIXYNC_DB:-$ROOT/nixync.db}" \
         "$PY" -m uvicorn server:app --host 0.0.0.0 --port 8000
     ;;
+machines)
+    exec env NIXYNC_DB="${NIXYNC_DB:-$ROOT/nixync.db}" "$PY" "$ROOT/src/back/server/scripts/list_machines.py" "${@:2}"
+    ;;
 gui)
     with_qt
     cd "$ROOT/src/front"
@@ -69,7 +76,7 @@ tests)
     exec env QT_QPA_PLATFORM=offscreen "$PY" -m pytest src/back/server src/back/client src/front "${@:2}"
     ;;
 *)
-    sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit 1
     ;;
 esac
