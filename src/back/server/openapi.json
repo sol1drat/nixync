@@ -112,6 +112,59 @@
         }
       }
     },
+    "/machines/{machine_id}/settings": {
+      "put": {
+        "tags": [
+          "machines"
+        ],
+        "summary": "Save Settings",
+        "description": "Replace a machine's system settings and deploy them.\n\nThe desktop app always sends the whole settings object, so this replaces rather\nthan merges \u2014 otherwise a setting the operator turned off could never be removed.\nPackages and the rest of the config are untouched.",
+        "operationId": "save_settings_machines__machine_id__settings_put",
+        "parameters": [
+          {
+            "name": "machine_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Machine Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageMutationResultItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/machines/{machine_id}": {
       "get": {
         "tags": [
@@ -187,6 +240,48 @@
         }
       }
     },
+    "/login": {
+      "post": {
+        "tags": [
+          "server"
+        ],
+        "summary": "Login",
+        "description": "Check a single hardcoded operator account.\n\nThis MVP has no authorization: every other endpoint is open, and nothing checks a\nsession afterwards. The endpoint exists so the desktop app's sign-in screen fails\nhonestly \u2014 wrong password, or server unreachable \u2014 rather than waving everyone\nthrough locally. Issuing a token nothing verifies would only look like security.",
+        "operationId": "login_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/status": {
       "get": {
         "tags": [
@@ -222,6 +317,37 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LoginRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "LoginResponse": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "LoginResponse"
+      },
       "MachineConfig": {
         "properties": {
           "packages": {
@@ -255,6 +381,12 @@
             "type": "array",
             "title": "Services",
             "default": []
+          },
+          "settings": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Settings",
+            "default": {}
           }
         },
         "type": "object",
@@ -508,6 +640,18 @@
           "apply_id"
         ],
         "title": "PackageMutationResultItem"
+      },
+      "SettingsUpdate": {
+        "properties": {
+          "settings": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Settings",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "title": "SettingsUpdate"
       },
       "ValidationError": {
         "properties": {

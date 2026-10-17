@@ -13,6 +13,7 @@ from models import (
     PackageMutationRequest,
     PackageMutationResponse,
     PackageMutationResultItem,
+    SettingsUpdate,
 )
 
 router = APIRouter(prefix="/machines", tags=["machines"])
@@ -82,33 +83,61 @@ async def change_packages(
                 raise HTTPException(status_code=404, detail=f"Machine not found: {machine_id}")
             targets.append(machine)
 
-    results = []
-    for machine in targets:
-        desired = _apply_action(machine.config, payload.action, payload.packages)
-
-        if _already_satisfied(machine, desired):
-            results.append(
-                PackageMutationResultItem(
-                    machine_id=machine.id, delivery="unchanged", apply_id=machine.last_apply_id
-                )
-            )
-            continue
-
-        apply_id = str(uuid.uuid4())
-        database.set_apply_pending(conn, machine.id, apply_id=apply_id, config=desired)
-
-        pushed = await connections.send_json(
-            machine.id, ApplyConfigOut(apply_id=apply_id, config=desired).model_dump()
+    results = [
+        await _deploy(
+            conn,
+            connections,
+            machine,
+            _apply_action(machine.config, payload.action, payload.packages),
         )
-        results.append(
-            PackageMutationResultItem(
-                machine_id=machine.id,
-                delivery="pushed" if pushed else "queued",
-                apply_id=apply_id,
-            )
-        )
-
+        for machine in targets
+    ]
     return PackageMutationResponse(results=results)
+
+
+async def _deploy(
+    conn: sqlite3.Connection,
+    connections: ConnectionManager,
+    machine: MachineOut,
+    desired: MachineConfig,
+) -> PackageMutationResultItem:
+    """Record a desired config and get it to the machine, now or on reconnect."""
+    if _already_satisfied(machine, desired):
+        return PackageMutationResultItem(
+            machine_id=machine.id, delivery="unchanged", apply_id=machine.last_apply_id
+        )
+
+    apply_id = str(uuid.uuid4())
+    database.set_apply_pending(conn, machine.id, apply_id=apply_id, config=desired)
+    pushed = await connections.send_json(
+        machine.id, ApplyConfigOut(apply_id=apply_id, config=desired).model_dump()
+    )
+    return PackageMutationResultItem(
+        machine_id=machine.id,
+        delivery="pushed" if pushed else "queued",
+        apply_id=apply_id,
+    )
+
+
+@router.put("/{machine_id}/settings", response_model=PackageMutationResultItem)
+async def save_settings(
+    machine_id: str,
+    payload: SettingsUpdate,
+    conn: sqlite3.Connection = Depends(get_db),
+    connections: ConnectionManager = Depends(get_connections),
+) -> PackageMutationResultItem:
+    """Replace a machine's system settings and deploy them.
+
+    The desktop app always sends the whole settings object, so this replaces rather
+    than merges — otherwise a setting the operator turned off could never be removed.
+    Packages and the rest of the config are untouched.
+    """
+    machine = database.get_machine(conn, machine_id)
+    if machine is None:
+        raise HTTPException(status_code=404, detail="Machine not found")
+
+    desired = machine.config.model_copy(update={"settings": payload.settings})
+    return await _deploy(conn, connections, machine, desired)
 
 
 @router.get("/{machine_id}", response_model=MachineOut)

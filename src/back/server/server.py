@@ -2,14 +2,17 @@ import os
 import socket
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 import database
 import machines_router
 import ws_router
 from connection_manager import ConnectionManager
+from models import LoginRequest, LoginResponse
 
 DEFAULT_DB_PATH = "nixync.db"
+DEFAULT_ADMIN_USER = "admin"
+DEFAULT_ADMIN_PASSWORD = "password"
 
 
 @asynccontextmanager
@@ -75,6 +78,23 @@ app = FastAPI(
 
 app.include_router(machines_router.router)
 app.include_router(ws_router.router)
+
+
+@app.post("/login", response_model=LoginResponse, tags=["server"])
+def login(credentials: LoginRequest) -> LoginResponse:
+    """Check a single hardcoded operator account.
+
+    This MVP has no authorization: every other endpoint is open, and nothing checks a
+    session afterwards. The endpoint exists so the desktop app's sign-in screen fails
+    honestly — wrong password, or server unreachable — rather than waving everyone
+    through locally. Issuing a token nothing verifies would only look like security.
+    """
+    expected_user = os.environ.get("NIXYNC_ADMIN_USER", DEFAULT_ADMIN_USER)
+    expected_password = os.environ.get("NIXYNC_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
+
+    if credentials.username != expected_user or credentials.password != expected_password:
+        raise HTTPException(status_code=401, detail="Incorrect username or password.")
+    return LoginResponse(username=credentials.username)
 
 
 @app.get("/status", tags=["server"])

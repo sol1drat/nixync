@@ -24,7 +24,13 @@ def test_register_machine_returns_generated_id_and_empty_config(client):
 
     assert machine["id"]
     assert machine["name"] == "lab-01"
-    assert machine["config"] == {"packages": [], "users": [], "groups": [], "services": []}
+    assert machine["config"] == {
+        "packages": [],
+        "users": [],
+        "groups": [],
+        "services": [],
+        "settings": {},
+    }
 
 
 def test_registered_machine_is_offline_until_a_socket_connects(client):
@@ -251,3 +257,84 @@ def test_an_unsupported_action_is_rejected(client):
     )
 
     assert response.status_code == 422
+
+
+def test_signing_in_with_the_configured_credentials_succeeds(client):
+    response = client.post("/login", json={"username": "admin", "password": "password"})
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "admin"
+
+
+def test_a_wrong_password_is_rejected(client):
+    response = client.post("/login", json={"username": "admin", "password": "nope"})
+
+    assert response.status_code == 401
+
+
+def test_an_unknown_username_is_rejected(client):
+    response = client.post("/login", json={"username": "root", "password": "password"})
+
+    assert response.status_code == 401
+
+
+def test_credentials_can_be_overridden_by_environment(monkeypatch, tmp_path):
+    """A demo should not need a code change to use a different password."""
+    monkeypatch.setenv("NIXYNC_ADMIN_USER", "lab")
+    monkeypatch.setenv("NIXYNC_ADMIN_PASSWORD", "s3cret")
+    monkeypatch.setenv("NIXYNC_DB", str(tmp_path / "env.db"))
+
+    with TestClient(server.app) as configured:
+        assert configured.post(
+            "/login", json={"username": "lab", "password": "s3cret"}
+        ).status_code == 200
+        assert configured.post(
+            "/login", json={"username": "admin", "password": "password"}
+        ).status_code == 401
+
+
+def test_saving_system_settings_stores_them_and_queues_a_deployment(client):
+    machine = register(client, "settings-host")
+
+    response = client.put(
+        f"/machines/{machine['id']}/settings",
+        json={"settings": {"hostname": "lab-05", "firewall": True}},
+    )
+
+    assert response.status_code == 200
+    stored = client.get(f"/machines/{machine['id']}").json()
+    assert stored["config"]["settings"] == {"hostname": "lab-05", "firewall": True}
+    assert stored["last_apply_status"] == "pending", "the machine must pick the change up"
+
+
+def test_saving_settings_replaces_rather_than_merges(client):
+    """The GUI sends the whole settings object, so a removed key must disappear."""
+    machine = register(client, "settings-replace")
+    client.put(
+        f"/machines/{machine['id']}/settings",
+        json={"settings": {"hostname": "old", "bluetooth": True}},
+    )
+
+    client.put(f"/machines/{machine['id']}/settings", json={"settings": {"hostname": "new"}})
+
+    assert client.get(f"/machines/{machine['id']}").json()["config"]["settings"] == {
+        "hostname": "new"
+    }
+
+
+def test_saving_settings_does_not_disturb_installed_packages(client):
+    machine = register(client, "settings-keeps-apps")
+    client.post(
+        "/machines/packages",
+        json={"action": "add", "packages": ["git"], "machine_ids": [machine["id"]]},
+    )
+
+    client.put(f"/machines/{machine['id']}/settings", json={"settings": {"hostname": "x"}})
+
+    assert packages_of(client, machine["id"]) == ["git"]
+
+
+def test_saving_settings_for_an_unknown_machine_returns_404(client):
+    response = client.put("/machines/does-not-exist/settings", json={"settings": {}})
+
+    assert response.status_code == 404

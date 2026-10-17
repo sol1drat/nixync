@@ -157,3 +157,21 @@ def test_set_apply_result_ignores_stale_apply_id(conn):
     fetched = get_machine(conn, machine.id)
     assert fetched.last_apply_status == "pending"
     assert fetched.last_apply_id == "apply-current"
+
+
+def test_machine_config_carries_free_form_system_settings(conn):
+    """Hostname, firewall and SSH are NixOS config, so they ride with the rest of it."""
+    machine = create_machine(conn, name="settings-host")
+    config = MachineConfig(packages=["git"], settings={"hostname": "lab-05", "firewall": True})
+
+    set_apply_pending(conn, machine.id, apply_id="a1", config=config)
+
+    fetched = get_machine(conn, machine.id)
+    assert fetched.config.settings == {"hostname": "lab-05", "firewall": True}
+    assert fetched.config.packages == ["git"], "settings do not disturb packages"
+
+
+def test_settings_default_to_empty_rather_than_null(conn):
+    machine = create_machine(conn, name="plain-host")
+
+    assert machine.config.settings == {}

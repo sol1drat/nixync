@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +8,10 @@ class MachineConfig(BaseModel):
     users: list[str] = []
     groups: list[str] = []
     services: list[str] = []
+    # Hostname, timezone, firewall, SSH and local users: all NixOS configuration, so it
+    # travels in the same declarative payload an agent reconciles against. Free-form
+    # because the desktop app owns the schema; the server only stores and forwards it.
+    settings: dict[str, Any] = {}
 
 
 class MachineOut(BaseModel):
@@ -31,6 +35,15 @@ class MachineOut(BaseModel):
 
 class MachineCreate(BaseModel):
     name: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    username: str
 
 
 class TelemetryIn(BaseModel):
@@ -78,3 +91,7 @@ class PackageMutationResultItem(BaseModel):
 
 class PackageMutationResponse(BaseModel):
     results: list[PackageMutationResultItem]
+
+
+class SettingsUpdate(BaseModel):
+    settings: dict[str, Any] = {}
