@@ -1,8 +1,8 @@
 from PySide6.QtCore import QObject, QRunnable, QSettings, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QListWidget, QMainWindow, QPushButton, QStackedWidget, QToolButton, QVBoxLayout,
-    QWidget,
+    QApplication, QHBoxLayout, QLabel, QListWidget, QMainWindow, QMessageBox, QPushButton, QStackedWidget, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from nixync_front import style
@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self.machine_config.back_requested.connect(lambda: self.stack.setCurrentWidget(self.machines))
         self.machine_config.undo_requested.connect(self.open_undo)
         self.machine_config.apply_requested.connect(self.apply_machine_apps)
+        self.machine_config.remove_requested.connect(self.remove_machine)
         self.machine_config.message.connect(self.show_message)
         self.presets.deploy_requested.connect(lambda _preset: self.go_to("Updates"))
         self.updates.undo_requested.connect(self.open_undo)
@@ -272,8 +273,20 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.machine_config)
 
     def apply_machine_apps(self, name: str, apps: list):
-        # TODO: send the machine's new app list to the server and start a build.
-        self.statusBar().showMessage(f"Updating {name}: {', '.join(apps) or 'no extra apps'}", 5000)
+        try:
+            added, removed = self.client.set_apps(name, apps)
+        except ApiError as e:
+            self.statusBar().showMessage(f"Couldn't update {name}: {e}", 10000)
+            return
+        parts = []
+        if added:
+            parts.append(f"adding {', '.join(added)}")
+        if removed:
+            parts.append(f"removing {', '.join(removed)}")
+        detail = "; ".join(parts) if parts else "no changes"
+        self.statusBar().showMessage(f"Updating {name}: {detail}", 10000)
+        self.machine_config.show_machine(name)
+        self.machines.refresh()
 
     def open_add_apps(self, devices: list):
         if not devices:
@@ -281,8 +294,11 @@ class MainWindow(QMainWindow):
         dialog = AddAppsDialog(self.client, devices, self)
         if not dialog.exec():
             return
-        # TODO: the server should build each device after this.
-        added = self.client.add_apps(devices, dialog.apps)
+        try:
+            added = self.client.add_apps(devices, dialog.apps)
+        except ApiError as e:
+            self.statusBar().showMessage(f"Couldn't add apps: {e}", 10000)
+            return
         parts = []
         for app in dialog.apps:
             got = [d for d in devices if app in added[d]]
@@ -298,9 +314,45 @@ class MainWindow(QMainWindow):
 
     def open_add_machine(self):
         dialog = AddMachineDialog([r.name for r in self.client.list_presets()], self)
-        if dialog.exec():
-            # TODO: POST the new machine to the server.
-            self.statusBar().showMessage(f"Added {dialog.values()['name']}", 5000)
+        if not dialog.exec():
+            return
+
+        values = dialog.values()
+        name = values["name"]
+        try:
+            self.client.add_machine(
+                name, preset=values["preset"], address=values["address"]
+            )
+            machine_id = self.client.machine_id(name)
+        except ApiError as e:
+            self.statusBar().showMessage(f"Couldn't add {name}: {e}", 10000)
+            return
+
+        # The operator needs this id to point that device's agent at the server, and
+        # there is no provisioning channel yet — so show it long enough to copy.
+        self.statusBar().showMessage(f"Added {name}. Agent id: {machine_id}", 60000)
+        self.machines.refresh()
+
+    def remove_machine(self, name: str):
+        answer = QMessageBox.question(
+            self,
+            "Remove device",
+            f"Remove {name} from the fleet?\n\n"
+            "Its agent will no longer be able to connect. Configuration on the "
+            "device itself is not changed.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.client.remove_machine(name)
+        except ApiError as e:
+            self.statusBar().showMessage(f"Couldn't remove {name}: {e}", 10000)
+            return
+        self.statusBar().showMessage(f"Removed {name}", 5000)
+        self.stack.setCurrentWidget(self.machines)
+        self.machines.refresh()
 
     def open_undo(self, host: str):
         if UndoUpdateDialog(host, self).exec():

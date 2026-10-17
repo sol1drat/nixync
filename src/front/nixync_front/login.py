@@ -104,7 +104,11 @@ class LoginWindow(QWidget):
         self.device_label = field_label("Device")
         self.device = QComboBox()
         # TODO: the client app runs on the device, so it should use its own hostname instead.
-        self.device.addItems([m.name for m in NixyncClient(self.config).list_machines()])
+        try:
+            devices = [m.name for m in NixyncClient(self.config).list_machines()]
+        except ApiError:
+            devices = []
+        self.device.addItems(devices)
         saved_device = self.settings.value("login/device", "", type=str)
         if saved_device:
             self.device.setCurrentText(saved_device)

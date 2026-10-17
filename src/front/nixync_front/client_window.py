@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon
 
 from nixync_front import style
-from nixync_front.api import NixyncClient
+from nixync_front.api import ApiError, NixyncClient
 from nixync_front.app_picker import _Search
 from nixync_front.config import Config
 from nixync_front.main_window import MainWindow
@@ -357,5 +357,9 @@ class ClientWindow(MainWindow):
         item.setText(f"My requests ({len(mine)})" if mine else "My requests")
 
     def _apply_settings(self, settings):
-        self.client.save_settings(self.device_name, settings)
+        try:
+            self.client.save_settings(self.device_name, settings)
+        except ApiError as e:
+            self.show_message(f"Couldn't apply settings: {e}")
+            return
         self.show_message(f"Applying your settings to {self.device_name}…")

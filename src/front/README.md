@@ -4,9 +4,43 @@ Desktop app for the Nixync host. It talks to the Nixync FastAPI server over HTTP
 Screens follow the host app sketch: **Machines**, **Roles** and **Updates** in the
 sidebar, with **Add machine** and **Undo update** as dialogs.
 
-Only `GET /status` is real today; machines, roles and the current update come from
-`nixync_front/sample_data.py` until the server has endpoints for them (see the
-`TODO`s in `nixync_front/api.py`).
+Sign-in, the device list, live telemetry, deploying apps and per-device system
+settings are **real** — they go through `nixync_client` (`src/back/client`) to the
+server. Presets, groups, app requests and the updates page still come from
+`nixync_front/sample_data.py`, because the server has no data model for them yet.
+See `SPEC.md` for the full split and the field mapping.
+
+Sign in with **`admin` / `password`** (override with `NIXYNC_ADMIN_USER` and
+`NIXYNC_ADMIN_PASSWORD` on the server). There is no authorization behind it — every
+other endpoint is open, so treat this as a demo gate, not security.
+
+## Trying it across two machines
+
+One machine runs the server and this app; the other runs an agent.
+
+```sh
+# machine A — the server, bound so the other machine can reach it
+cd src/back/server
+NIXYNC_DB=nixync.db python -m uvicorn server:app --host 0.0.0.0 --port 8000
+
+# machine A — the host app; sign in and point it at the server
+cd src/front && NIXYNC_SERVER_URL=http://<machine-A-ip>:8000 python -m nixync_front
+```
+
+Add the device in the app. The status bar then shows its **agent id** — the server
+mints it, and there is no provisioning channel yet, so copy it across by hand:
+
+```sh
+# machine B — the managed NixOS box
+python src/back/client/example_agent.py \
+    --server http://<machine-A-ip>:8000 --machine-id <agent-id>
+```
+
+The device turns Online with live CPU, memory and disk. Apps you add from the app
+reach it over its socket; a device that is switched off gets the change when it next
+connects. Note the reference agent **prints** what it would install rather than
+touching the system — give `example_agent.py` a real `apply_config` to make
+deployments actually change the machine.
 
 ## Run
 

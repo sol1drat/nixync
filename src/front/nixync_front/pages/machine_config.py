@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 
 from nixync_front import style
-from nixync_front.api import NixyncClient
+from nixync_front.api import ApiError, NixyncClient
 from nixync_front.app_picker import AppPicker, static_tags
 from nixync_front.dialogs.ask_ai import AskAIDialog
 from nixync_front.settings_panel import SettingsPanel
@@ -13,7 +13,7 @@ from nixync_front.users_panel import UsersPanel
 from nixync_front.pages.machines import gb
 from nixync_front.sample_data import Health, Machine
 from nixync_front.widgets import (
-    Panel, RingGauge, ago, clear_layout, dot, page_header, primary_button, status_row, status_text, timestamp,
+    Panel, RingGauge, ago, clear_layout, page_header, primary_button, status_row, status_text, timestamp,
 )
 
 def health_color(health: Health) -> str:
@@ -50,6 +50,7 @@ class MachineConfigPage(QWidget):
     requests_requested = Signal(str)
     undo_requested = Signal(str)
     apply_requested = Signal(str, list)
+    remove_requested = Signal(str)
 
     def __init__(self, client: NixyncClient):
         super().__init__()
@@ -80,9 +81,14 @@ class MachineConfigPage(QWidget):
         back = QPushButton("← Devices")
         back.setProperty("link", True)
         back.clicked.connect(self.back_requested)
+        remove = QPushButton("Remove device")
+        remove.setProperty("link", True)
+        remove.setToolTip("Unregister this device from the fleet")
+        remove.clicked.connect(lambda: self.remove_requested.emit(m.name))
         top = QHBoxLayout()
         top.addWidget(back)
         top.addStretch()
+        top.addWidget(remove)
         self.layout_.addLayout(top)
 
         header = QHBoxLayout()
@@ -170,7 +176,11 @@ class MachineConfigPage(QWidget):
         return panel
 
     def _apply_settings(self, settings):
-        # TODO: send the settings to the server, which rebuilds the device with them.
+        try:
+            self.client.save_settings(self.machine.name, settings)
+        except ApiError as e:
+            self.message.emit(f"Couldn't apply settings to {self.machine.name}: {e}")
+            return
         self.machine.settings = settings
         self.message.emit(f"Applying system settings to {self.machine.name}…")
 

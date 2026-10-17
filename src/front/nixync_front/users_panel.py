@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 
 from nixync_front import nix_config, style
-from nixync_front.api import NixyncClient
+from nixync_front.api import ApiError, NixyncClient
 from nixync_front.sample_data import LocalUser, Machine
 from nixync_front.widgets import Panel, clear_layout, primary_button, status_text
 
@@ -176,7 +176,11 @@ class UsersPanel(Panel):
             self.rows.addWidget(row)
 
     def _save(self, text: str, passwords: dict[str, str] | None = None):
-        self.client.save_settings(self.machine.name, self.machine.settings, passwords)
+        try:
+            self.client.save_settings(self.machine.name, self.machine.settings, passwords)
+        except ApiError as e:
+            self.message.emit(f"Couldn't update users on {self.machine.name}: {e}")
+            return
         self._render()
         self.message.emit(text)
 

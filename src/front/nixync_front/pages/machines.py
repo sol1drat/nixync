@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from nixync_front import style
-from nixync_front.api import NixyncClient
+from nixync_front.api import ApiError, NixyncClient
 from nixync_front.sample_data import Health, Machine
 from nixync_front.widgets import (
     usage_color,
@@ -86,9 +86,11 @@ class MachinesPage(QWidget):
     def __init__(self, client: NixyncClient):
         super().__init__()
         self.client = client
-        self.machines = client.list_machines()
+        self.machines: list[Machine] = []
+        self.load_error = ""
         self.selected: set[str] = set()
         self.shown: list[Machine] = []
+        self._reload()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -223,7 +225,26 @@ class MachinesPage(QWidget):
                 and group in (None, m.group)
                 and preset in (None, m.preset)]
 
+    def _reload(self):
+        """Re-read the fleet from the server.
+
+        The devices, their telemetry and their deployment state all change while the
+        app is open, so this has to run on every refresh — rendering the list captured
+        at construction would freeze the view at whatever was true when it launched.
+
+        A failure leaves the page empty rather than raising: an unreachable server must
+        not stop the app from starting, and `load_error` keeps the reason so the view
+        can say the fleet is unknown instead of pretending it is empty.
+        """
+        try:
+            self.machines = self.client.list_machines()
+            self.load_error = ""
+        except ApiError as e:
+            self.machines = []
+            self.load_error = str(e)
+
     def refresh(self):
+        self._reload()
         self.shown = self._visible()
         self.table.clearSpans()
         self.table.setRowCount(0)
@@ -232,7 +253,12 @@ class MachinesPage(QWidget):
             self._fill_row(row, machine)
         if not self.shown:
             self.table.setRowCount(1)
-            empty = QLabel("No devices match these filters.")
+            # Don't blame the filters when the fleet simply could not be read.
+            empty = QLabel(
+                f"Can't reach the server, so the fleet is unknown.\n{self.load_error}"
+                if self.load_error
+                else "No devices match these filters."
+            )
             empty.setObjectName("Muted")
             self.table.setSpan(0, 0, 1, len(COLUMNS))
             self.table.setCellWidget(0, 0, centered(empty, Qt.AlignmentFlag.AlignCenter))

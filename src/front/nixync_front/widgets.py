@@ -1,5 +1,5 @@
 from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QByteArray, QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPen, QPixmap
@@ -21,7 +21,9 @@ A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06
 
 def ago(when: datetime) -> str:
     """Short relative time: "recently", "5m ago", "5h 2m ago", "2d 3h ago"."""
-    seconds = int((datetime.now() - when).total_seconds())
+    # Server timestamps are timezone-aware ISO 8601; sample_data uses naive local times.
+    now = datetime.now(timezone.utc if when.tzinfo is not None else None)
+    seconds = int((now - when).total_seconds())
     if seconds < 60:
         return "recently"
     minutes, hours, days = seconds // 60, seconds // 3600, seconds // 86400
