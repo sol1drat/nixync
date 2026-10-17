@@ -7,3 +7,4 @@ __pycache__/
 src/front/config.toml
 *.db
 .pytest_cache/
+.qt-libs
