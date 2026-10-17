@@ -280,3 +280,65 @@ def test_a_write_that_fails_partway_leaves_the_previous_module_intact(etc, monke
 
     assert (etc / "nixync.nix").read_text() == good, "the old module survived untouched"
     assert not list(etc.glob("*.tmp*")), "and the partial write was cleaned up"
+
+
+# -- rollback must leave the machine buildable ------------------------------
+
+
+def test_a_failed_first_rebuild_removes_the_import_it_added(etc):
+    """Found on a real machine: the module was deleted but the import was not.
+
+    configuration.nix was left importing ./nixync.nix with no such file, so every
+    later `nixos-rebuild` failed — including one the operator ran themselves, with
+    nothing on screen explaining why. Rolling back has to undo both halves.
+    """
+    before = (etc / "configuration.nix").read_text()
+
+    with pytest.raises(RebuildFailed):
+        writer(etc, FakeRebuild(returncode=1, stderr="boom")).apply(
+            MachineConfig(packages=["nope"])
+        )
+
+    assert not (etc / "nixync.nix").exists()
+    assert (etc / "configuration.nix").read_text() == before, (
+        "configuration.nix is byte-identical to before the attempt"
+    )
+
+
+def test_a_failed_rebuild_keeps_the_import_when_a_module_already_worked(etc):
+    """The opposite case: a working deployment must not lose its import line."""
+    writer(etc, FakeRebuild()).apply(MachineConfig(packages=["git"]))
+    good_config = (etc / "configuration.nix").read_text()
+
+    with pytest.raises(RebuildFailed):
+        writer(etc, FakeRebuild(returncode=1, stderr="boom")).apply(
+            MachineConfig(packages=["git", "broken"])
+        )
+
+    assert (etc / "configuration.nix").read_text() == good_config
+    assert "./nixync.nix" in (etc / "configuration.nix").read_text()
+    assert (etc / "nixync.nix").exists(), "the working module is still there"
+
+
+def test_a_failed_rebuild_leaves_no_state_file_behind_on_a_first_attempt(etc):
+    """A state file for a deployment that never landed is a lie about the machine."""
+    with pytest.raises(RebuildFailed):
+        writer(etc, FakeRebuild(returncode=1, stderr="boom")).apply(
+            MachineConfig(packages=["nope"])
+        )
+
+    assert not (etc / ".nixync-state.json").exists()
+
+
+def test_the_machine_still_builds_after_a_failed_deployment(etc):
+    """The property all of this protects: nothing dangling, nothing half-applied."""
+    with pytest.raises(RebuildFailed):
+        writer(etc, FakeRebuild(returncode=1, stderr="boom")).apply(
+            MachineConfig(packages=["nope"])
+        )
+
+    config = (etc / "configuration.nix").read_text()
+    imported = [part for part in config.split() if part.endswith(".nix")]
+    for reference in imported:
+        name = reference.lstrip("./")
+        assert (etc / name).exists(), f"configuration.nix imports missing {reference}"

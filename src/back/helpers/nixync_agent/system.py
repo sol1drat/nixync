@@ -15,6 +15,7 @@ import re
 import subprocess
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from nixync_client.nix import render
@@ -23,6 +24,7 @@ from nixync_client.protocol import MachineConfig
 logger = logging.getLogger(__name__)
 
 MODULE_NAME = "nixync.nix"
+STATE_NAME = ".nixync-state.json"
 IMPORT_PATH = "./nixync.nix"
 REBUILD_COMMAND = ["nixos-rebuild", "switch"]
 REBUILD_TIMEOUT_SECONDS = 30 * 60
@@ -71,6 +73,11 @@ class SystemWriter:
     def configuration_path(self) -> Path:
         return self.config_dir / "configuration.nix"
 
+    @property
+    def state_path(self) -> Path:
+        """What Nixync last successfully applied here."""
+        return self.config_dir / STATE_NAME
+
     # -- the one public operation ------------------------------------------
 
     def apply(self, config: MachineConfig) -> str:
@@ -88,19 +95,18 @@ class SystemWriter:
             logger.info("dry run: would write %s and rebuild", self.module_path)
             return text
 
-        previous = self.module_path.read_text() if self.module_path.exists() else None
-        previous_state = self.current_config()
+        # Snapshot everything this call can change, so a failure is a clean undo.
+        # Restoring only the module used to leave configuration.nix importing a file
+        # that was no longer there, which broke every later rebuild — including ones
+        # the operator ran themselves, with nothing on screen to explain why.
+        previous = _Snapshot.take(self)
         self._write_atomically(text)
         self._ensure_imported()
 
         try:
             self._rebuild()
         except RebuildFailed:
-            # The machine is still running the old configuration, so the recorded
-            # state has to go back too — otherwise the agent would report the config
-            # it failed to apply as the one the machine has.
-            self._restore(previous)
-            self._record_state(previous_state)
+            previous.restore(self)
             raise
         self._record_state(config)
         return text
@@ -112,7 +118,7 @@ class SystemWriter:
         so round-tripping it would be re-implementing a Nix evaluator to recover
         something already known.
         """
-        record = self.config_dir / ".nixync-state.json"
+        record = self.state_path
         if not record.exists():
             return MachineConfig()
         import json
@@ -148,8 +154,7 @@ class SystemWriter:
     def _record_state(self, config: MachineConfig) -> None:
         import json
 
-        state = self.config_dir / ".nixync-state.json"
-        state.write_text(json.dumps(config.to_dict(), indent=2))
+        self.state_path.write_text(json.dumps(config.to_dict(), indent=2))
 
     def _ensure_imported(self) -> None:
         """Add `./nixync.nix` to configuration.nix, once."""
@@ -189,12 +194,49 @@ class SystemWriter:
         if result.returncode != 0:
             raise RebuildFailed(_tail(result.stderr or result.stdout or ""))
 
-    def _restore(self, previous: str | None) -> None:
-        """Put back what was there, so a failed deployment leaves a buildable machine."""
+    def _restore_text(self, previous: str | None) -> None:
         if previous is None:
             self.module_path.unlink(missing_ok=True)
         else:
             self._write_atomically(previous)
+
+
+@dataclass
+class _Snapshot:
+    """Everything an apply() can change, so a failed one can be undone completely.
+
+    The three move together: a module with no import does nothing, an import with no
+    module breaks the build, and a state file for a deployment that never landed is
+    a lie about what the machine is running.
+    """
+
+    module: str | None
+    configuration: str | None
+    state: str | None
+
+    @classmethod
+    def take(cls, writer: "SystemWriter") -> "_Snapshot":
+        return cls(
+            module=_read(writer.module_path),
+            configuration=_read(writer.configuration_path),
+            state=_read(writer.state_path),
+        )
+
+    def restore(self, writer: "SystemWriter") -> None:
+        writer._restore_text(self.module)
+        # Written back verbatim rather than by un-editing the import line: the
+        # operator's file may have any formatting, and putting back exactly what was
+        # read cannot get that wrong.
+        if self.configuration is not None:
+            writer.configuration_path.write_text(self.configuration)
+        if self.state is None:
+            writer.state_path.unlink(missing_ok=True)
+        else:
+            writer.state_path.write_text(self.state)
+
+
+def _read(path: Path) -> str | None:
+    return path.read_text() if path.exists() else None
 
 
 def _tail(output: str, lines: int = ERROR_TAIL_LINES) -> str:
