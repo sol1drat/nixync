@@ -1,7 +1,7 @@
 # Nixync
 
 > [!WARNING]
-> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. The agent runs with elevated privileges to apply NixOS configuration changes.
+> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. The client runs with elevated privileges to apply NixOS configuration changes.
 >
 > **Hackathon jury?** [Jump directly to the testing instructions](#testing-it-for-hackathon-judges).
 
