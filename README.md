@@ -4,6 +4,26 @@
 
 # Nixync
 
+## Contents
+
+- [The problem](#the-problem)
+- [The solution](#the-solution)
+- [Time saved](#time-saved)
+- [Architecture](#architecture)
+- [Installing Nixync Client Service on NixOS](#installing-nixync-client-service-on-nixos)
+- [NixOS deployment workflow](#nixos-deployment-workflow)
+- [Features](#features)
+- [Run the app](#run-the-app)
+- [Testing it (for hackathon judges)](#testing-it-for-hackathon-judges)
+- [Development](#development)
+- [Future Plans](#future-plans)
+
+> [!WARNING]
+> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. **Nixync Client Service** runs with elevated privileges to apply [NixOS](https://nixos.org) configuration changes.
+>
+> **Hackathon jury?** [For testing, jump directly to the testing instructions](#testing-it-for-hackathon-judges).
+
+
 **One place for an administrator to manage every computer in an office or school: install software, change settings, answer user requests, and see what happened on each machine.**
 
 ## The problem
@@ -27,26 +47,9 @@ Nixync manages a fleet of [NixOS](https://nixos.org) machines from one desktop a
 
 [Watch the demo (2 min)](https://www.youtube.com/watch?v=95BtCKfkX7s)
 
-> [!WARNING]
-> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. **Nixync Client Service** runs with elevated privileges to apply [NixOS](https://nixos.org) configuration changes.
->
-> **Hackathon jury?** [Jump directly to the testing instructions](#testing-it-for-hackathon-judges).
-
 Nixync is a control center for managing a fleet of [NixOS](https://nixos.org) machines. It gives an administrator one place to inspect host health, define package and system settings, deploy configuration changes, and review the result of each deployment.
 
 Instead of installing software imperatively on every host, Nixync represents supported changes in NixOS configuration and applies them through the NixOS rebuild workflow. **Nixync Client Service** runs on each managed host, receives deployment tasks from the central server, applies the configuration, and reports status and logs back to Nixync.
-
-## Contents
-
-- [Time saved](#time-saved)
-- [Architecture](#architecture)
-- [Installing Nixync Client Service on NixOS](#installing-nixync-client-service-on-nixos)
-- [NixOS deployment workflow](#nixos-deployment-workflow)
-- [Features](#features)
-- [Run the app](#run-the-app)
-- [Testing it (for hackathon judges)](#testing-it-for-hackathon-judges)
-- [Development](#development)
-- [Future Plans](#future-plans)
 
 ## Time saved
 
