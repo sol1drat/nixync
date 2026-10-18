@@ -57,6 +57,11 @@
                 fontconfig
                 freetype
 
+                # Pulled in by QtNetwork, which PyInstaller's PySide6 hook imports
+                # when packaging the desktop app.
+                krb5
+                brotli
+
                 # X11 libraries
                 libx11
                 libxext

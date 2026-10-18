@@ -8,3 +8,7 @@ src/front/config.toml
 *.db
 .pytest_cache/
 .qt-libs
+
+# PyInstaller output (packaging/nixync.spec)
+dist/
+build/
