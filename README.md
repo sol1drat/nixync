@@ -1,101 +1,130 @@
 # Nixync
 
-Nixync is a control center for managing a fleet of NixOS machines from one app,
-instead of configuring and checking every machine by hand.
+> [!WARNING]
+> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. The agent runs with elevated privileges to apply NixOS configuration changes.
+>
+> **Hackathon jury?** [Jump directly to the testing instructions](#testing-it-for-hackathon-judges).
 
-An administrator registers machines, groups them with reusable **presets**
-(roles like "workstation" or "build-server"), and manages their packages and
-settings from a dashboard. Each managed machine runs a small agent that applies
-the change and reports back — connected, healthy, or failed, with the build log
-attached. People working on a managed machine get the same app in a lighter
-"device" mode, to request extra software that an admin then approves or
-declines.
+Nixync is a control center for managing a fleet of NixOS machines. It gives an administrator one place to inspect host health, define package and system settings, deploy configuration changes, and review the result of each deployment.
 
-## How it works
+Instead of installing software imperatively on every host, Nixync represents supported changes in NixOS configuration and applies them through the NixOS rebuild workflow. A host agent communicates with the central server, runs the deployment on the machine, and reports status and logs back to the dashboard.
 
-- **Admin app** — sign in and see every machine's status, then manage
-  packages, settings and presets from the **Devices**, **Presets** and
-  **Updates** pages.
-- **Agent** — a small daemon installed on each NixOS machine
-  ([`install-agent.sh`](install-agent.sh)). It stays connected to the server,
-  applies configuration changes, and reports health and logs back.
-- **Server** — what everything talks to. Holds the fleet state: machines,
-  presets, and pending app requests.
-- **Device mode** — the same desktop app, signed in as a device instead of an
-  admin, so the person using that machine can request new software and see
-  its status without touching its configuration directly.
+## Contents
 
-Failed deployments show the build log plus an **Ask AI** button that explains
-the failure in plain language.
+- [Architecture](#architecture)
+- [NixOS deployment workflow](#nixos-deployment-workflow)
+- [Features](#features)
+- [Run the administrator app](#run-the-administrator-app)
+- [Testing it (for hackathon judges)](#testing-it-for-hackathon-judges)
+- [Development](#development)
+- [Future Plans](#future-plans)
+
+## Architecture
+
+Nixync is made up of four separate components:
+
+| Component | Responsibility |
+| --- | --- |
+| **Administrator app** | Desktop GUI for managing the fleet: host inventory, package and settings changes, presets, app-request approvals, and deployment results. |
+| **Server** | Central API and state store for registered machines, presets, requests, and deployment status. The administrator app, clients, and agents communicate through it. |
+| **Host agent** | A background service on each managed machine. It receives deployment tasks, updates the managed NixOS configuration, invokes the rebuild, and sends the result and logs back to the server. |
+| **Nixync Client** | A separate, independently built application binary distributed to end users on managed machines. It lets them request software and check request status. It is **not** a mode of the administrator desktop app and does not replace the privileged host agent. |
+
+### Installing the host agent on NixOS
+
+The [`install-agent.sh`](install-agent.sh) installer configures the agent as a systemd system service. On NixOS, service units are managed declaratively, so the installer writes a NixOS module to `/etc/nixos/nixync-agent.nix`, imports it from `/etc/nixos/configuration.nix`, and runs `nixos-rebuild switch` to activate the service configuration. The service runs as root because deployments need to write system configuration and invoke privileged NixOS rebuilds.
+
+The service is configured to start at boot and restart if the agent process exits. Its logs can be inspected with:
+
+```sh
+journalctl -u nixync-agent -f
+```
+
+## NixOS deployment workflow
+
+A typical package or settings deployment follows this path:
+
+1. **Define the change.** An administrator edits the host's supported settings or packages in the administrator app. Presets can be assigned to hosts, but applying a preset's package set is an explicit action rather than an automatic side effect of assigning a label.
+2. **Send the deployment.** The server records the requested change and passes the task to the relevant connected host agent.
+3. **Update declarative configuration.** The agent writes the managed configuration fragment at `/etc/nixos/nixync.nix` rather than asking the user to install packages manually with an imperative package manager.
+4. **Evaluate, build, and activate.** The agent runs `nixos-rebuild switch`. Nix evaluates the NixOS configuration and builds the resulting system closure in `/nix/store`; if the rebuild and activation succeed, the machine switches to the new system generation.
+5. **Report the result.** The agent sends the outcome and available build/activation output to the server. The administrator can inspect per-host deployment results and logs in the **Updates** view. Failed deployments include their logs and an **Ask AI** action to help explain the error.
+
+This workflow is designed around NixOS's declarative system configuration and generation-based rebuilds—not around remotely running an arbitrary `apt install`-style command for every package change.
 
 ## Features
 
-- **Fleet dashboard** — every registered machine, its health (ok / problem /
-  unreachable) and last-seen time, filterable by status, group or preset.
-- **Presets (roles)** — label machines without silently changing them;
-  rolling a preset's packages out to a machine is a separate, explicit step.
-- **Package & settings management** — add or remove packages, and edit
-  hostname, nameservers, firewall ports and users, without hand-editing Nix
-  config. Advanced users can still see the real config with one toggle.
-- **App requests** — someone at a machine can ask for software they can't
-  install themselves; an admin approves or declines, and approving deploys it
-  the same way any other change would.
-- **Per-machine results** — build/activation history, health and full logs
-  for every deployment, with AI-assisted help on failures.
+- **Fleet overview:** see registered machines, health (`ok`, `problem`, or `unreachable`), and last-seen time; filter by status, group, or preset.
+- **Presets and roles:** organize machines as `workstation`, `web-server`, `build-server`, or other roles. Applying a preset's configuration is a separate, deliberate operation.
+- **Package and system settings:** manage packages and supported settings such as hostname, nameservers, firewall ports, and users through the GUI. Advanced users can inspect the generated Nix configuration.
+- **Software requests:** end users can submit requests through the separate **Nixync Client**. An administrator can approve or decline a request; approval triggers the normal deployment workflow.
+- **Per-host deployment history:** inspect results and logs for each host to see which changes succeeded or failed.
+- **Failure assistance:** use the **Ask AI** action to get a plain-language explanation of a failed deployment log.
 
-## Try it
+## Run the administrator app
 
-Download the latest release for your platform from
-[Releases (v0.1.0)](https://github.com/sol1drat/nixync/releases/tag/v0.1.0):
+Download the appropriate administrator-app release asset from [GitHub Releases (v0.1.0)](https://github.com/sol1drat/nixync/releases/tag/v0.1.0):
 
 - **Linux:** `nixync-linux.zip`
 - **Windows:** `nixync-windows.zip`
 
-Unzip it and run `nixync` (Linux) or `nixync.exe` (Windows). The sign-in
-screen asks for a server URL and credentials.
+Extract the archive and launch `nixync` on Linux or `nixync.exe` on Windows. On the sign-in screen, enter the server URL and your credentials.
+
+The **Nixync Client** is a separate binary for end users on managed machines. Distribute and launch that client build separately; there is no device/client-mode toggle inside the administrator application. The host agent is also a separate component, installed as a background service on each managed host.
 
 ## Testing it (for hackathon judges)
 
-A demo server with a virtual NixOS machine is already running, so no setup is
-needed.
+A demo server with a virtual NixOS machine is already running, so you can test the main workflow without setting up a server or installing NixOS yourself.
 
-1. Open the app and on the sign-in screen use:
+1. Download and open the administrator app, then sign in with these demo credentials:
+
    - **Server URL:** `http://94.43.175.162:8000`
    - **Username:** `admin`
    - **Password:** `password`
-2. After signing in, a virtual NixOS machine is already registered and
-   connected. Open it from the **Devices** page to change its packages,
-   settings or preset, or check the **Updates** page for deployment results.
-3. To watch those changes land on the machine itself, connect to it remotely
-   with [RustDesk](https://rustdesk.com):
+
+2. Open **Devices**. A virtual NixOS machine should already be registered and connected. Select it to inspect its configuration, change packages or supported settings, or apply a preset.
+3. Open **Updates** to review the deployment status and logs for the change.
+4. To observe the virtual machine itself, connect through [RustDesk](https://rustdesk.com):
+
    - **RustDesk ID:** `<RUSTDESK_ID>`
    - **RustDesk password:** `<RUSTDESK_PASSWORD>`
 
-> On Linux, the app needs a few shared libraries Qt depends on (`libegl1`,
-> `libgl1`, `libxkbcommon-x11-0`, ...). See
-> [packaging/README.md](packaging/README.md) for the full list if it won't
-> start.
+The demo server and credentials are for evaluation only. Do not enter personal information, production credentials, or other sensitive data.
 
 ## Development
 
+Enter the Nix development shell and install the Python dependencies:
+
 ```sh
-nix develop                       # sets up the dev shell (.venv, native libs)
+nix develop
 pip install -r requirements.txt
-./run-demo.sh server              # fleet server on :8000 (admin / password)
-./run-demo.sh gui                 # the desktop app
-./run-demo.sh agent <machine-id>   # a machine agent (prints instead of installing)
-./run-demo.sh tests               # the test suite
 ```
 
-See [packaging/README.md](packaging/README.md) for building the desktop app
-into a standalone binary per platform, and
-[install-agent.sh](install-agent.sh) for installing the real agent on a
-NixOS machine.
+Common development commands:
 
-## Status
+```sh
+./run-demo.sh server                # start the fleet server on :8000
+./run-demo.sh gui                   # launch the administrator desktop app
+./run-demo.sh agent <machine-id>    # run the development/mock agent
+./run-demo.sh tests                 # run the test suite
+```
 
-Nixync is an early prototype built for a hackathon: a working slice of fleet
-management (register, configure, deploy, see results, approve requests)
-rather than the full product. Git integration and infrastructure provisioning
-are intentionally out of scope — see [CLAUDE.md](CLAUDE.md) for the longer-term
-idea.
+To install the real host agent on a **test NixOS machine**, register the machine in Nixync first, then use the machine ID supplied by the app:
+
+```sh
+sudo ./install-agent.sh --server http://<SERVER-IP>:8000 --machine-id <MACHINE-ID>
+```
+
+Review the installer before running it: it modifies the host's NixOS configuration and installs a root-owned system service. Use [`install-agent.sh`](install-agent.sh) for the supported install/uninstall options and [packaging/README.md](packaging/README.md) for instructions on building the desktop application binaries.
+
+## Future Plans
+
+The following are planned improvements; they are not all implemented in the current alpha.
+
+- **Flake- and Git-based configuration management:** connect hosts to version-controlled NixOS configurations, show diffs before deployment, and track pinned inputs and configuration revisions.
+- **Safer deployment gates:** add evaluation and dry-build checks before activation, clearer change previews, explicit confirmation for risky changes, and more consistent failure handling.
+- **Staged fleet rollouts:** deploy first to a canary host, then to selected groups or the full fleet, with concurrency limits and per-host rollout status.
+- **Recovery and rollback tools:** make it easier to select a previous NixOS generation and recover from a bad deployment through the dashboard.
+- **Better fleet observability:** show system generations, agent/service health, and richer host diagnostics alongside connection status and deployment history.
+- **Security hardening:** improve agent enrollment, transport security, access control, audit trails, and handling of privileged operations before considering production use.
+- **Client and administrator UX:** streamline software-request approvals, improve progress reporting, and simplify distributing and updating the separate Nixync Client binary.
