@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Nixync logo" width="180">
+</p>
+
 # Nixync
 
 > [!WARNING]
@@ -87,8 +91,8 @@ A demo server with a virtual NixOS machine is already running, so you can test t
 3. Open **Updates** to review the deployment status and logs for the change.
 4. To observe the virtual machine itself, connect through [RustDesk](https://rustdesk.com):
 
-   - **RustDesk ID:** `<RUSTDESK_ID>`
-   - **RustDesk password:** `<RUSTDESK_PASSWORD>`
+   - **RustDesk ID:** `15 936 730`
+   - **RustDesk password:** `Password123`
 
 The demo server and credentials are for evaluation only. Do not enter personal information, production credentials, or other sensitive data.
 
