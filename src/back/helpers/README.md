@@ -32,6 +32,11 @@ The daemon becomes a systemd **system** service: it starts at boot, restarts if 
 dies, and — being root-owned — only root can stop it, which is the point on a
 machine someone else administers.
 
+On NixOS the service is **declared** as `/etc/nixos/nixync-agent.nix`, imported from
+`configuration.nix`, and realised by `nixos-rebuild switch`. A unit file cannot be
+dropped into `/etc/systemd/system` there: it is a symlink into the read-only Nix
+store. On other distributions the script writes a plain unit instead.
+
 ```sh
 sudo systemctl stop nixync-agent     # needs root
 journalctl -u nixync-agent -f        # what it is doing
