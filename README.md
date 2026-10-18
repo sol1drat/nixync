@@ -17,6 +17,7 @@
 - [Testing it (for hackathon judges)](#testing-it-for-hackathon-judges)
 - [Development](#development)
 - [Future Plans](#future-plans)
+- [Watch the demo (2 min)](https://www.youtube.com/watch?v=95BtCKfkX7s)
 
 > [!WARNING]
 > **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. **Nixync Client Service** runs with elevated privileges to apply [NixOS](https://nixos.org) configuration changes.
