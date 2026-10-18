@@ -25,10 +25,10 @@ Nixync is made up of four separate components:
 
 | Component | Responsibility |
 | --- | --- |
-| **Nixync** | Native nesktop GUI for managing the fleet: host inventory, package and settings changes, presets, app-request approvals, and deployment results. |
+| **Nixync** | Native desktop GUI for managing the fleet: host inventory, package and settings changes, presets, app-request approvals, and deployment results. |
 | **Server** | Central API and state store for registered machines, presets, requests, and deployment status. The administrator app, clients, and agents communicate through it. |
-| **Client Service** | A background service on each managed machine. It receives deployment tasks, updates the managed NixOS configuration, invokes the rebuild, and sends the result and logs back to the server. |
 | **Nixync Client** | A separate (from **Nixync**) binary distributed to end users on managed machines. It lets them request software and check request status. |
+| **Nixync Client Service** | A background service on each managed machine. It receives deployment tasks, updates the managed NixOS configuration, invokes the rebuild, and sends the result and logs back to the server. |
 
 ### Installing the host agent on NixOS
 
