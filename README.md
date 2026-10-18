@@ -5,7 +5,7 @@
 >
 > **Hackathon jury?** [Jump directly to the testing instructions](#testing-it-for-hackathon-judges).
 
-Nixync is a control center for managing a fleet of NixOS machines. It gives an administrator one place to inspect host health, define package and system settings, deploy configuration changes, and review the result of each deployment.
+Nixync is a control center for managing a fleet of [NixOS](https://nixos.org) machines. It gives an administrator one place to inspect host health, define package and system settings, deploy configuration changes, and review the result of each deployment.
 
 Instead of installing software imperatively on every host, Nixync represents supported changes in NixOS configuration and applies them through the NixOS rebuild workflow. **Nixync Client Service** runs on each managed host, receives deployment tasks from the central server, applies the configuration, and reports status and logs back to Nixync.
 
