@@ -1,0 +1,132 @@
+# Builds the Nixync desktop app for Windows, Linux and macOS.
+#
+# PyInstaller cannot cross-compile, so every platform builds on its own runner.
+# Pushing a v* tag publishes the archives as a GitHub release; running the
+# workflow by hand just leaves them as artifacts, which is how to test a change
+# to this file without burning a version number.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 rather than latest: the binary links against the runner's glibc,
+          # and an older one still runs on newer distributions, not the reverse.
+          - os: ubuntu-22.04
+            name: linux-x86_64
+          - os: windows-latest
+            name: windows-x86_64
+          - os: macos-14
+            name: macos-arm64
+          - os: macos-13
+            name: macos-x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Qt links against these at load time; the runner image has no desktop.
+      - name: Install Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libdbus-1-3 libxkbcommon0
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Pillow is not a runtime dependency: PyInstaller needs it to turn the
+          # app's PNG icon into the .ico and .icns that Windows and macOS require.
+          pip install pyinstaller==6.22.3 pillow
+
+      - name: Build
+        run: pyinstaller packaging/nixync.spec --noconfirm --distpath dist --workpath build
+
+      # A bundle can build cleanly and still die on startup over a module the
+      # analysis missed. --self-check imports everything reached lazily and opens
+      # the first window off-screen, so a broken build fails here and not for a user.
+      - name: Verify the build starts
+        if: runner.os != 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            ./dist/Nixync.app/Contents/MacOS/nixync --self-check
+          else
+            ./dist/nixync/nixync --self-check
+          fi
+
+      # The Windows build is a GUI executable, so it has no console to print to and
+      # a shell will not reliably wait on it. Start-Process does both.
+      - name: Verify the build starts
+        if: runner.os == 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath .\dist\nixync\nixync.exe -ArgumentList '--self-check' `
+                 -Wait -PassThru -NoNewWindow `
+                 -RedirectStandardOutput self-check.out -RedirectStandardError self-check.err
+          Get-Content self-check.out, self-check.err -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "self-check failed with exit code $($p.ExitCode)" }
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # ditto preserves the bundle's symlinks and permissions; zip does not.
+            ditto -c -k --keepParent dist/Nixync.app "artifacts/nixync-${{ matrix.name }}.zip"
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "artifacts/nixync-${{ matrix.name }}.zip" ./dist/nixync/*
+          else
+            tar -czf "artifacts/nixync-${{ matrix.name }}.tar.gz" -C dist nixync
+          fi
+          ls -lh artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nixync-${{ matrix.name }}
+          path: artifacts/*
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Nixync ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            artifacts/*
