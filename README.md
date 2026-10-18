@@ -61,7 +61,7 @@ This workflow is designed around NixOS's declarative system configuration and ge
 - **Per-host deployment history:** inspect results and logs for each host to see which changes succeeded or failed.
 - **Failure assistance:** use the **Ask AI** action to get a plain-language explanation of a failed deployment log.
 
-## Run the administrator app
+## Run the app
 
 Download the appropriate administrator-app release asset from [GitHub Releases (v0.1.0)](https://github.com/sol1drat/nixync/releases/tag/v0.1.0):
 
