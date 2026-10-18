@@ -12,3 +12,4 @@ src/front/config.toml
 # PyInstaller output (packaging/nixync.spec)
 dist/
 build/
+result
