@@ -60,7 +60,7 @@ The same task on the same virtual machines, done by hand and done in Nixync.
 | Install one application (Install Google Chrome) | 10 | 33 mins | 12 mins | 1.5 mins 🔥 |
 | Change a setting (Open a firewall port) | 10 | 10 mins | 5 mins | <1 min 🔥 |
 | Update the system | 10 | 1 hour 10 mins | 25 mins | 2 mins 🔥 |
-| Get health info of the computers (CPU,RAM,DISK) | 10 | TBD | TBD | <1 min 🔥 |
+| Get health info of the computers (CPU,RAM,DISK) | 10 | 20 mins | 20 mins | <1 min 🔥 |
 
 ## Architecture
 
