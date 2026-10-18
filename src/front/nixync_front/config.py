@@ -1,9 +1,23 @@
 import os
+import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_PATH = Path(__file__).resolve().parent.parent / "config.toml"
+
+def _default_path() -> Path:
+    """Where config.toml lives.
+
+    Running from the repository that is src/front/config.toml, next to the package.
+    In a PyInstaller build the package sits in an _internal directory nobody would
+    think to look in, so use the directory holding the executable instead.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "config.toml"
+    return Path(__file__).resolve().parent.parent / "config.toml"
+
+
+DEFAULT_PATH = _default_path()
 
 
 @dataclass(frozen=True)
