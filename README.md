@@ -1,20 +1,14 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Nixync logo" width="180">
+  <img src="assets/banner.png" alt="Nixync logo" style="width: 100%;">
 </p>
 
 # Nixync
 
-> [!WARNING]
-> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. **Nixync Client Service** runs with elevated privileges to apply [NixOS](https://nixos.org) configuration changes.
->
-> **Hackathon jury?** [Jump directly to the testing instructions](#testing-it-for-hackathon-judges).
-
-Nixync is a control center for managing a fleet of [NixOS](https://nixos.org) machines. It gives an administrator one place to inspect host health, define package and system settings, deploy configuration changes, and review the result of each deployment.
-
-Instead of installing software imperatively on every host, Nixync represents supported changes in NixOS configuration and applies them through the NixOS rebuild workflow. **Nixync Client Service** runs on each managed host, receives deployment tasks from the central server, applies the configuration, and reports status and logs back to Nixync.
-
 ## Contents
 
+- [The problem](#the-problem)
+- [The solution](#the-solution)
+- [Time saved](#time-saved)
 - [Architecture](#architecture)
 - [Installing Nixync Client Service on NixOS](#installing-nixync-client-service-on-nixos)
 - [NixOS deployment workflow](#nixos-deployment-workflow)
@@ -23,6 +17,51 @@ Instead of installing software imperatively on every host, Nixync represents sup
 - [Testing it (for hackathon judges)](#testing-it-for-hackathon-judges)
 - [Development](#development)
 - [Future Plans](#future-plans)
+- [Watch the demo (2 min)](https://www.youtube.com/watch?v=95BtCKfkX7s)
+
+> [!WARNING]
+> **Early alpha disclaimer:** Nixync is experimental software under active development. Expect incomplete workflows and bugs. Test it only on disposable VMs or other non-critical machines; do not use it to manage production systems or hosts containing important data. **Nixync Client Service** runs with elevated privileges to apply [NixOS](https://nixos.org) configuration changes.
+>
+> **Hackathon jury?** [For testing, jump directly to the testing instructions](#testing-it-for-hackathon-judges).
+
+
+**One place for an administrator to manage every computer in an office or school: install software, change settings, answer user requests, and see what happened on each machine.**
+
+## The problem
+
+Windows 10 reached the end of its extended security updates on 13 October 2026. Many office and school computers cannot run Windows 11, and Linux is a way to keep them in service. Managing a fleet of machines by hand, one at a time, is slow, and the machines drift apart: different software, different settings, no record of what changed or why. That costs administrators time and leaves users with machines that lag or break.
+
+## The solution
+
+Nixync manages a fleet of [NixOS](https://nixos.org) machines from one desktop application. NixOS describes each machine's whole state declaratively, applies updates atomically, and keeps previous system generations, so a failed change does not leave a machine half-configured. Nixync turns that into a user friendly workflow an administrator can use without editing Nix files on every host:
+
+- choose the machines, then change packages and supported settings once;
+- deploy, and see per-host results and logs;
+- approve or decline software requests that users send from their own machines.
+
+<!-- TODO: add a screenshot or GIF of the Devices view here, e.g. assets/devices.png -->
+<!-- TODO: demo video: [Watch the demo (2-3 min)](VIDEO_URL) -->
+
+<p align="center">
+  <img src="assets/nixync_gui.png" alt="Nixync GUI" style="width: 100%;">
+</p>
+
+[Watch the demo (2 min)](https://www.youtube.com/watch?v=95BtCKfkX7s)
+
+Nixync is a control center for managing a fleet of [NixOS](https://nixos.org) machines. It gives an administrator one place to inspect host health, define package and system settings, deploy configuration changes, and review the result of each deployment.
+
+Instead of installing software imperatively on every host, Nixync represents supported changes in NixOS configuration and applies them through the NixOS rebuild workflow. **Nixync Client Service** runs on each managed host, receives deployment tasks from the central server, applies the configuration, and reports status and logs back to Nixync.
+
+## Time saved
+
+The same task on the same virtual machines, done by hand and done in Nixync.
+
+| Task | Machines | By hand (Windows, Anydesk) | By hand (Linux Mint, SSH) | Nixync |
+| --- | --- | --- | --- | --- |
+| Install one application (Install Google Chrome) | 10 | 33 mins | 12 mins | 1.5 mins 🔥 |
+| Change a setting (Open a firewall port) | 10 | 10 mins | 5 mins | <1 min 🔥 |
+| Update the system | 10 | 1 hour 10 mins | 25 mins | 2 mins 🔥 |
+| Get health info of the computers (CPU,RAM,DISK) | 10 | 20 mins | 20 mins | <1 min 🔥 |
 
 ## Architecture
 
@@ -59,12 +98,12 @@ This workflow is designed around NixOS's declarative system configuration and ge
 
 ## Features
 
+- **Software requests:** end users submit requests through the separate Nixync Client. An administrator approves or declines a request in Nixync; approval triggers the normal deployment workflow through Nixync Client Service.
+- **Failure assistance:** the **Ask AI** action in Nixync gives a plain-language explanation of a failed deployment log, so an administrator does not have to read raw Nix output. It needs Anthropic API credentials in the environment (see `src/front/nixync_front/ai.py`).
 - **Fleet overview:** see registered machines, health (`ok`, `problem`, or `unreachable`), and last-seen time; filter by status, group, or preset.
-- **Presets and roles:** organize machines as `workstation`, `web-server`, `build-server`, or other roles. Applying a preset's configuration is a separate, deliberate operation.
 - **Package and system settings:** manage packages and supported settings such as hostname, nameservers, firewall ports, and users through Nixync. Advanced users can inspect the generated Nix configuration.
-- **Software requests:** end users submit requests through the separate Nixync Client. An administrator can approve or decline a request in Nixync; approval triggers the normal deployment workflow through Nixync Client Service.
+- **Presets and roles:** organize machines as `workstation`, `web-server`, `build-server`, or other roles. Applying a preset's configuration is a separate, deliberate operation.
 - **Per-host deployment history:** inspect results and logs for each host to see which changes succeeded or failed.
-- **Failure assistance:** use the **Ask AI** action in Nixync to get a plain-language explanation of a failed deployment log.
 
 ## Run the app
 
@@ -126,7 +165,6 @@ Review the installer before running it: it modifies the host's NixOS configurati
 
 The following are planned improvements; they are not all implemented in the current alpha.
 
-- **Flake- and Git-based configuration management:** connect hosts to version-controlled NixOS configurations, show diffs before deployment, and track pinned inputs and configuration revisions.
 - **Safer deployment gates:** add evaluation and dry-build checks before activation, clearer change previews, explicit confirmation for risky changes, and more consistent failure handling.
 - **Staged fleet rollouts:** deploy first to a canary host, then to selected groups or the full fleet, with concurrency limits and per-host rollout status.
 - **Recovery and rollback tools:** make it easier to select a previous NixOS generation and recover from a bad deployment through the dashboard.
